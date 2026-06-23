@@ -1,0 +1,36 @@
+<resources>
+    <string name="app_name">WeChat Notify</string>
+    <string name="listener_name">WeChat Notify Listener</string>
+    <string name="subtitle">重寫微信通知與 Live Update</string>
+    <string name="section_status">狀態</string>
+    <string name="section_permissions">權限</string>
+    <string name="section_tests">測試</string>
+    <string name="action_open_listener">開啟通知使用權</string>
+    <string name="action_listener_enabled">✓ 通知使用權已開啟</string>
+    <string name="action_request_notifications">授予通知權限</string>
+    <string name="action_notifications_enabled">✓ 通知權限已開啟</string>
+    <string name="action_open_app_settings">開啟應用程式設定</string>
+    <string name="action_test_notification">傳送測試通知</string>
+    <string name="action_test_voice_call">傳送語音通話測試</string>
+    <string name="action_test_video_call">傳送視訊通話測試</string>
+    <string name="status_listener">通知使用權: %1$s</string>
+    <string name="status_notifications">通知權限: %1$s</string>
+    <string name="status_live_update">Live Update: %1$s</string>
+    <string name="status_enabled">已開啟</string>
+    <string name="status_disabled">未開啟</string>
+    <string name="status_system_allowed">系統允許</string>
+    <string name="status_system_not_allowed">系統未允許</string>
+    <string name="dialog_notifications_enabled">通知權限已開啟</string>
+    <string name="test_notification_text">測試通知</string>
+    <string name="test_voice_call_title">微信語音通話</string>
+    <string name="test_video_call_title">微信視訊通話</string>
+    <string name="test_voice_call_text">語音通話中</string>
+    <string name="test_video_call_text">視訊通話中</string>
+    <string name="wechat_call_title">微信通話</string>
+    <string name="wechat_call_in_progress">通話中</string>
+    <string name="channel_wechat_messages">微信訊息</string>
+    <string name="channel_wechat_messages_description">重寫後的微信訊息通知</string>
+    <string name="channel_status">狀態</string>
+    <string name="channel_wechat_calls">微信通話</string>
+    <string name="channel_wechat_calls_description">微信通話 Live Update</string>
+</resources>

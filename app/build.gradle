@@ -1,0 +1,16 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "wang.bofan.wechatnotify"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "wang.bofan.wechatnotify"
+        minSdk 26
+        targetSdk 36
+        versionCode 21
+        versionName "0.21"
+    }
+}
