@@ -27,13 +27,29 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final int MAX_HISTORY = 8;
     private final Map<String, ArrayDeque<Message>> histories = new HashMap<>();
     private final Map<String, String> originalToConversation = new HashMap<>();
+    private final Map<CancelEventKey, ReplacementRecord> replacementsByCancelEvent = new HashMap<>();
     private final Set<String> selfHiddenOriginals = new HashSet<>();
+    private NotificationCancelLogWatcher cancelLogWatcher;
 
     @Override
     public void onCreate() {
         super.onCreate();
         NotificationChannels.ensure(this);
+        cancelLogWatcher = new NotificationCancelLogWatcher(this::handleNotificationCancelLog);
+        cancelLogWatcher.start();
         Log.i(TAG, "service created, sdk=" + Build.VERSION.SDK_INT);
+    }
+
+    @Override
+    public void onListenerDisconnected() {
+        super.onListenerDisconnected();
+        Log.i(TAG, "listener disconnected");
+    }
+
+    @Override
+    public void onDestroy() {
+        if (cancelLogWatcher != null) cancelLogWatcher.stop();
+        super.onDestroy();
     }
 
     @Override
@@ -69,12 +85,12 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (!WECHAT_PACKAGE.equals(sbn.getPackageName())) return;
         String key = sbn.getKey();
         if (selfHiddenOriginals.remove(key)) {
-            originalToConversation.remove(key);
             Log.d(TAG, "wechat hidden by self: key=" + key + ", reason=" + reasonName(reason));
             return;
         }
         if (WeChatParser.isVoipNotification(sbn.getNotification())) {
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancel(voipReplacementId(sbn));
+            replacementsByCancelEvent.remove(CancelEventKey.from(sbn));
             Log.i(TAG, "cancel rewritten voip notification: key=" + key + ", reason=" + reasonName(reason));
             return;
         }
@@ -82,6 +98,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (conversationKey != null) {
             histories.remove(conversationKey);
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancel(stableId(conversationKey));
+            replacementsByCancelEvent.remove(CancelEventKey.from(sbn));
             Log.i(TAG, "cancel rewritten wechat notification after original removal"
                     + ", key=" + key
                     + ", conversation=" + conversationKey
@@ -91,11 +108,27 @@ public class WeChatNotificationService extends NotificationListenerService {
         Log.d(TAG, "wechat removed: key=" + key + ", reason=" + reasonName(reason));
     }
 
+    private void handleNotificationCancelLog(String pkg, int id, String tag, int userId, int reason) {
+        if (!WECHAT_PACKAGE.equals(pkg)) return;
+        CancelEventKey eventKey = new CancelEventKey(userId, id, tag);
+        ReplacementRecord replacement = replacementsByCancelEvent.remove(eventKey);
+        if (replacement == null) return;
+
+        originalToConversation.remove(replacement.originalKey);
+        if (replacement.conversationKey != null) histories.remove(replacement.conversationKey);
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancel(replacement.replacementId);
+        Log.i(TAG, "cancel rewritten wechat notification after app cancel log"
+                + ", key=" + replacement.originalKey
+                + ", conversation=" + replacement.conversationKey
+                + ", reason=" + reasonName(reason));
+    }
+
     private void handleWeChatNotification(StatusBarNotification sbn, boolean fromActiveScan) {
         Notification original = sbn.getNotification();
         ParsedVoipNotification voip = WeChatParser.parseVoip(this, sbn);
         if (voip != null) {
             postVoipReplacement(sbn, voip, original);
+            rememberReplacement(sbn, null, voipReplacementId(sbn));
             hideOriginal(sbn);
             Log.i(TAG, "rewritten wechat voip notification"
                     + ", fromActiveScan=" + fromActiveScan
@@ -122,6 +155,7 @@ public class WeChatNotificationService extends NotificationListenerService {
 
         originalToConversation.put(sbn.getKey(), parsed.conversationKey);
         postReplacement(sbn, parsed, history, original);
+        rememberReplacement(sbn, parsed.conversationKey, stableId(parsed.conversationKey));
         hideOriginal(sbn);
         hideDuplicateOriginals(parsed, sbn.getKey());
         Log.i(TAG, "rewritten wechat notification"
@@ -213,11 +247,17 @@ public class WeChatNotificationService extends NotificationListenerService {
             if (activeParsed == null) continue;
             if (!TextUtils.equals(parsed.conversationKey, activeParsed.conversationKey)) continue;
             originalToConversation.put(activeSbn.getKey(), activeParsed.conversationKey);
+            rememberReplacement(activeSbn, activeParsed.conversationKey, stableId(activeParsed.conversationKey));
             hideOriginal(activeSbn);
             Log.i(TAG, "hide duplicate original wechat notification"
                     + ", key=" + activeSbn.getKey()
                     + ", conversation=" + activeParsed.conversationKey);
         }
+    }
+
+    private void rememberReplacement(StatusBarNotification sbn, String conversationKey, int replacementId) {
+        replacementsByCancelEvent.put(CancelEventKey.from(sbn),
+                new ReplacementRecord(sbn.getKey(), conversationKey, replacementId));
     }
 
     private void postVoipReplacement(StatusBarNotification sbn, ParsedVoipNotification voip,
@@ -320,6 +360,61 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private static int voipReplacementId(StatusBarNotification sbn) {
         return stableId("wechat:voip:" + sbn.getId() + ":" + sbn.getTag());
+    }
+
+    private static int userIdFromKey(String key) {
+        if (key == null) return 0;
+        int sep = key.indexOf('|');
+        if (sep <= 0) return 0;
+        try {
+            return Integer.parseInt(key.substring(0, sep));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private static final class CancelEventKey {
+        final int userId;
+        final int id;
+        final String tag;
+
+        CancelEventKey(int userId, int id, String tag) {
+            this.userId = userId;
+            this.id = id;
+            this.tag = NotificationCancelLogWatcher.normalizeTag(tag);
+        }
+
+        static CancelEventKey from(StatusBarNotification sbn) {
+            return new CancelEventKey(userIdFromKey(sbn.getKey()), sbn.getId(), sbn.getTag());
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (!(obj instanceof CancelEventKey)) return false;
+            CancelEventKey other = (CancelEventKey) obj;
+            return userId == other.userId && id == other.id && TextUtils.equals(tag, other.tag);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = userId;
+            result = 31 * result + id;
+            result = 31 * result + (tag != null ? tag.hashCode() : 0);
+            return result;
+        }
+    }
+
+    private static final class ReplacementRecord {
+        final String originalKey;
+        final String conversationKey;
+        final int replacementId;
+
+        ReplacementRecord(String originalKey, String conversationKey, int replacementId) {
+            this.originalKey = originalKey;
+            this.conversationKey = conversationKey;
+            this.replacementId = replacementId;
+        }
     }
 
     private static String channelId(Notification notification) {

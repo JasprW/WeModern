@@ -32,3 +32,13 @@ After installing the APK, enable notification listener access for `WeChat Notify
 ```bash
 adb shell cmd appops set wang.bofan.wechatnotify RECEIVE_SENSITIVE_NOTIFICATIONS allow
 ```
+
+To enable synchronous removal of rewritten WeChat notifications when WeChat
+cancels its original notification, also grant log access and enable debug
+notification service logs, then reboot:
+
+```bash
+adb shell pm grant wang.bofan.wechatnotify android.permission.READ_LOGS
+adb shell setprop persist.log.tag.NotificationService DEBUG
+adb reboot
+```
