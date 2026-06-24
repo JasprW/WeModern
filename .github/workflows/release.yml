@@ -51,11 +51,11 @@ jobs:
         run: ./gradlew :app:assembleDebug
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "wechat-notify-${{ steps.release.outputs.tag }}.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "wemodern-${{ steps.release.outputs.tag }}.apk"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
-          name: WeChat Notify ${{ steps.release.outputs.tag }}
-          files: wechat-notify-${{ steps.release.outputs.tag }}.apk
+          name: WeModern ${{ steps.release.outputs.tag }}
+          files: wemodern-${{ steps.release.outputs.tag }}.apk

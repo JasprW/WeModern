@@ -35,5 +35,5 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: wechat-notify-debug
+          name: wemodern-debug
           path: app/build/outputs/apk/debug/app-debug.apk

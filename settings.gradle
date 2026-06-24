@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "WeChatNotify"
+rootProject.name = "WeModern"
 include ":app"

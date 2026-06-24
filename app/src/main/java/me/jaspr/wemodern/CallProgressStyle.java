@@ -1,4 +1,4 @@
-package wang.bofan.wechatnotify;
+package me.jaspr.wemodern;
 
 import android.app.Notification;
 import android.graphics.drawable.Icon;

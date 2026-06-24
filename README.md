@@ -1,4 +1,4 @@
-# WeChat Notify
+# WeModern
 
 An Android notification listener that rewrites WeChat message and call notifications for newer Android versions.
 
@@ -23,14 +23,14 @@ git tag v0.11
 git push origin v0.11
 ```
 
-The release workflow attaches `wechat-notify-<tag>.apk`.
+The release workflow attaches `wemodern-<tag>.apk`.
 
 ## Device Setup
 
-After installing the APK, enable notification listener access for `WeChat Notify` and grant notification permission. For Android versions that require sensitive notification access during development, grant it with adb:
+After installing the APK, enable notification listener access for `WeModern` and grant notification permission. For Android versions that require sensitive notification access during development, grant it with adb:
 
 ```bash
-adb shell cmd appops set wang.bofan.wechatnotify RECEIVE_SENSITIVE_NOTIFICATIONS allow
+adb shell cmd appops set me.jaspr.wemodern RECEIVE_SENSITIVE_NOTIFICATIONS allow
 ```
 
 To enable synchronous removal of rewritten WeChat notifications when WeChat
@@ -38,7 +38,7 @@ cancels its original notification, also grant log access and enable debug
 notification service logs, then reboot:
 
 ```bash
-adb shell pm grant wang.bofan.wechatnotify android.permission.READ_LOGS
+adb shell pm grant me.jaspr.wemodern android.permission.READ_LOGS
 adb shell setprop persist.log.tag.NotificationService DEBUG
 adb reboot
 ```

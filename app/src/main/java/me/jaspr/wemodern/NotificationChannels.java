@@ -1,4 +1,4 @@
-package wang.bofan.wechatnotify;
+package me.jaspr.wemodern;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;

@@ -1,4 +1,4 @@
-package wang.bofan.wechatnotify;
+package me.jaspr.wemodern;
 
 import android.service.notification.NotificationListenerService;
 import android.text.TextUtils;
@@ -15,7 +15,7 @@ final class NotificationCancelLogWatcher {
         void onAppCancelled(String pkg, int id, String tag, int userId, int reason);
     }
 
-    private static final String TAG = "WeChatNotify.Logs";
+    private static final String TAG = "WeModern.Logs";
     private static final String EVENT_TAG = "notification_cancel";
 
     private final Callback callback;
@@ -32,6 +32,7 @@ final class NotificationCancelLogWatcher {
         running = true;
         thread = new Thread(this::run, "notification-cancel-log-watcher");
         thread.start();
+        Log.i(TAG, "notification cancel log watcher started");
     }
 
     synchronized void stop() {
@@ -39,6 +40,7 @@ final class NotificationCancelLogWatcher {
         if (process != null) process.destroy();
         process = null;
         thread = null;
+        Log.i(TAG, "notification cancel log watcher stopped");
     }
 
     private void run() {
@@ -54,6 +56,13 @@ final class NotificationCancelLogWatcher {
                         if (event == null) continue;
                         if (event.reason == NotificationListenerService.REASON_APP_CANCEL
                                 || event.reason == NotificationListenerService.REASON_APP_CANCEL_ALL) {
+                            if ("com.tencent.mm".equals(event.pkg)) {
+                                Log.i(TAG, "wechat notification_cancel event"
+                                        + ", userId=" + event.userId
+                                        + ", id=" + event.id
+                                        + ", tag=" + event.tag
+                                        + ", reason=" + event.reason);
+                            }
                             callback.onAppCancelled(event.pkg, event.id, event.tag, event.userId, event.reason);
                         }
                     }
@@ -120,7 +129,7 @@ final class NotificationCancelLogWatcher {
     }
 
     static String normalizeTag(String tag) {
-        if (tag == null || tag.length() == 0 || "null".equals(tag)) return null;
+        if (tag == null || tag.length() == 0 || "null".equalsIgnoreCase(tag)) return null;
         return tag;
     }
 
