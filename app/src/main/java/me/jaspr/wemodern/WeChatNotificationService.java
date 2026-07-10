@@ -29,10 +29,14 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final String TAG = "WeModern";
     private static final String WECHAT_PACKAGE = "com.tencent.mm";
     private static final String WECHAT_VOIP_CHANNEL = "voip_notify_channel_new_id";
+    private static final String MESSAGE_GROUP_KEY = "wechat.rewritten";
     private static final String EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing";
     private static final String REPLACEMENT_STORE = "sync_removal_replacements";
     private static final String STORAGE_SEPARATOR = "\u001f";
     private static final int MAX_HISTORY = 8;
+    private static final int TEST_VOICE_CALL_NOTIFICATION_ID = 101;
+    private static final int TEST_VIDEO_CALL_NOTIFICATION_ID = 102;
+    private static final int MESSAGE_GROUP_SUMMARY_ID = 0x5747534d;
     private final Map<String, ArrayDeque<Message>> histories = new HashMap<>();
     private final Map<String, String> originalToConversation = new HashMap<>();
     private final Map<CancelEventKey, ReplacementRecord> replacementsByCancelEvent = new HashMap<>();
@@ -71,8 +75,11 @@ public class WeChatNotificationService extends NotificationListenerService {
             if (WECHAT_PACKAGE.equals(sbn.getPackageName())) {
                 logWeChatPosted(sbn, "active-scan");
                 handleWeChatNotification(sbn, true);
+            } else if (getPackageName().equals(sbn.getPackageName())) {
+                restoreShortcutContentIntent(sbn.getNotification());
             }
         }
+        ConversationShortcuts.refreshIcons(this);
         cleanupOrphanedReplacements(active);
         mainHandler.postDelayed(this::cleanupCurrentOrphanedReplacements, 2000);
     }
@@ -104,6 +111,12 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private void handleWeChatNotificationRemoved(StatusBarNotification sbn, int reason) {
+        if (getPackageName().equals(sbn.getPackageName())) {
+            if (isMessageGroupChild(sbn.getNotification())) {
+                mainHandler.post(this::removeMessageGroupSummaryIfNotNeeded);
+            }
+            return;
+        }
         if (!WECHAT_PACKAGE.equals(sbn.getPackageName())) return;
         String key = sbn.getKey();
         if (selfHiddenOriginals.remove(key)) {
@@ -186,9 +199,10 @@ public class WeChatNotificationService extends NotificationListenerService {
                     + ", flags=" + original.flags);
             return;
         }
-
         ArrayDeque<Message> history = histories.computeIfAbsent(parsed.conversationKey, key -> new ArrayDeque<>());
-        Message message = new Message(parsed.sender, parsed.text, sbn.getPostTime(), resolveSenderIcon(original));
+        Icon originalSenderIcon = resolveSenderIcon(original);
+        Icon fittedSenderIcon = ConversationShortcuts.fitAvatarIcon(this, originalSenderIcon);
+        Message message = new Message(parsed.sender, parsed.text, sbn.getPostTime(), fittedSenderIcon);
         if (!containsRecentDuplicate(history, message)) {
             history.addLast(message);
             while (history.size() > MAX_HISTORY) history.removeFirst();
@@ -196,7 +210,9 @@ public class WeChatNotificationService extends NotificationListenerService {
 
         originalToConversation.put(sbn.getKey(), parsed.conversationKey);
         rememberReplacement(sbn, parsed.conversationKey, stableId(parsed.conversationKey));
-        postReplacement(sbn, parsed, history, original);
+        ConversationShortcuts.publish(this, parsed.conversationKey, parsed.title, originalSenderIcon,
+                original.contentIntent);
+        postReplacement(sbn, parsed, history, original, fittedSenderIcon);
         hideOriginal(sbn);
         hideDuplicateOriginals(parsed, sbn.getKey());
         Log.i(TAG, "rewritten wechat notification"
@@ -208,12 +224,11 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private void postReplacement(StatusBarNotification sbn, ParsedNotification parsed,
-                                 ArrayDeque<Message> history, Notification original) {
+                                 ArrayDeque<Message> history, Notification original,
+                                 Icon senderIcon) {
         CharSequence contentText = parsed.groupConversation
                 ? parsed.sender + ": " + parsed.text
                 : parsed.text;
-        Icon senderIcon = resolveSenderIcon(original);
-
         Notification.Builder builder = new Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
                 .setSmallIcon(resolveSmallIcon(original))
                 .setContentTitle(parsed.title)
@@ -225,7 +240,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_MESSAGE)
                 .setColor(0xff33b332)
-                .setGroup("wechat.rewritten");
+                .setGroup(MESSAGE_GROUP_KEY);
         if (senderIcon != null) {
             builder.setLargeIcon(senderIcon);
         }
@@ -238,8 +253,8 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (Build.VERSION.SDK_INT >= 29) {
             builder.setAllowSystemGeneratedContextualActions(true);
         }
-        if (Build.VERSION.SDK_INT >= 30) {
-            builder.setShortcutId(parsed.conversationKey);
+        builder.setShortcutId(parsed.conversationKey);
+        if (Build.VERSION.SDK_INT >= 29) {
             builder.setLocusId(new android.content.LocusId(parsed.conversationKey));
         }
 
@@ -261,6 +276,28 @@ public class WeChatNotificationService extends NotificationListenerService {
                     + ", originalKey=" + sbn.getKey());
             nm.notify(stableId(parsed.conversationKey), builder.build());
         }
+        if (histories.size() >= 2) {
+            postMessageGroupSummary(contentIntent);
+        } else {
+            nm.cancel(MESSAGE_GROUP_SUMMARY_ID);
+        }
+    }
+
+    private void postMessageGroupSummary(PendingIntent contentIntent) {
+        Notification.Builder builder = new Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
+                .setSmallIcon(R.drawable.ic_wechat_scan_24dp)
+                .setContentTitle(getString(R.string.channel_wechat_messages))
+                .setContentText(getString(R.string.app_name))
+                .setGroup(MESSAGE_GROUP_KEY)
+                .setGroupSummary(true)
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_MESSAGE)
+                .setColor(0xff33b332);
+        if (contentIntent != null) builder.setContentIntent(contentIntent);
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
+                .notify(MESSAGE_GROUP_SUMMARY_ID, builder.build());
     }
 
     private Notification.MessagingStyle buildMessageStyle(ParsedNotification parsed,
@@ -335,6 +372,16 @@ public class WeChatNotificationService extends NotificationListenerService {
                 && !NotificationChannels.WECHAT_CALLS.equals(channel)) {
             return;
         }
+        if (isMessageGroupSummary(sbn.getNotification())) {
+            return;
+        }
+        if (isCallTestNotification(sbn)) {
+            Log.d(TAG, "keep test call notification"
+                    + ", id=" + sbn.getId()
+                    + ", channel=" + channel
+                    + ", key=" + sbn.getKey());
+            return;
+        }
         if (hasPersistedReplacement(sbn.getId())) {
             Log.d(TAG, "keep tracked replacement notification"
                     + ", id=" + sbn.getId()
@@ -347,6 +394,37 @@ public class WeChatNotificationService extends NotificationListenerService {
                 + ", id=" + sbn.getId()
                 + ", channel=" + channel
                 + ", key=" + sbn.getKey());
+    }
+
+    private boolean isCallTestNotification(StatusBarNotification sbn) {
+        int id = sbn.getId();
+        return id == TEST_VOICE_CALL_NOTIFICATION_ID || id == TEST_VIDEO_CALL_NOTIFICATION_ID;
+    }
+
+    private static boolean isMessageGroupSummary(Notification notification) {
+        return (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0
+                && TextUtils.equals(MESSAGE_GROUP_KEY, notification.getGroup());
+    }
+
+    private static boolean isMessageGroupChild(Notification notification) {
+        return (notification.flags & Notification.FLAG_GROUP_SUMMARY) == 0
+                && TextUtils.equals(MESSAGE_GROUP_KEY, notification.getGroup());
+    }
+
+    private void removeMessageGroupSummaryIfNotNeeded() {
+        StatusBarNotification[] active = getActiveNotifications();
+        int childCount = 0;
+        if (active != null) {
+            for (StatusBarNotification sbn : active) {
+                if (getPackageName().equals(sbn.getPackageName())
+                        && isMessageGroupChild(sbn.getNotification())) {
+                    childCount++;
+                    if (childCount >= 2) return;
+                }
+            }
+        }
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
+                .cancel(MESSAGE_GROUP_SUMMARY_ID);
     }
 
     private void forgetReplacement(CancelEventKey eventKey) {
@@ -466,6 +544,13 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private static Icon resolveSenderIcon(Notification original) {
         return original.getLargeIcon();
+    }
+
+    private static void restoreShortcutContentIntent(Notification notification) {
+        String shortcutId = notification.getShortcutId();
+        if (!TextUtils.isEmpty(shortcutId) && notification.contentIntent != null) {
+            ConversationShortcuts.registerContentIntent(shortcutId, notification.contentIntent);
+        }
     }
 
     private void logWeChatPosted(StatusBarNotification sbn, String source) {

@@ -4,4 +4,11 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:colorAccent">#0B57D0</item>
     </style>
+
+    <style name="ShortcutTrampolineTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:colorAccent">#0B57D0</item>
+    </style>
 </resources>

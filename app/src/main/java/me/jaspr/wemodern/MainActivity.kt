@@ -11,6 +11,7 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -97,6 +98,7 @@ class MainActivity : ComponentActivity() {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
                     onRequestNotifications = { requestPostNotifications() },
+                    onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
                     onOpenAppSettings = {
                         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                             data = Uri.parse("package:$packageName")
@@ -129,6 +131,7 @@ class MainActivity : ComponentActivity() {
         notificationListenerEnabled = isListenerEnabled(),
         postNotificationsGranted = hasPostNotificationPermission(),
         promotedNotificationsAllowed = canPostPromotedNotifications(),
+        batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
         readLogsGranted = hasReadLogsPermission(),
         notificationServiceDebugEnabled = isNotificationServiceDebugEnabled(),
     )
@@ -146,6 +149,10 @@ class MainActivity : ComponentActivity() {
 
     private fun canPostPromotedNotifications(): Boolean {
         return Build.VERSION.SDK_INT >= 36 && getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
+    }
+
+    private fun isBatteryOptimizationIgnored(): Boolean {
+        return getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
     }
 
     private fun hasReadLogsPermission(): Boolean {
@@ -178,6 +185,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestIgnoreBatteryOptimization() {
+        if (isBatteryOptimizationIgnored()) {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.dialog_battery_optimization_ignored)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+
+        val requestIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        runCatching {
+            startActivity(requestIntent)
+        }.onFailure {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
     private fun postTestNotification() {
         val notification = Notification.Builder(this, NotificationChannels.STATUS)
             .setSmallIcon(R.drawable.ic_wechat_scan_24dp)
@@ -190,7 +216,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun postCallTestNotification(video: Boolean) {
-        val startedAt = System.currentTimeMillis() - 65_000L
+        val startedAt = System.currentTimeMillis()
         val iconRes = if (video) R.drawable.ic_material_videocam_24 else R.drawable.ic_material_call_24
         val builder = Notification.Builder(this, NotificationChannels.WECHAT_CALLS)
             .setSmallIcon(iconRes)
@@ -235,6 +261,7 @@ private data class SetupState(
     val notificationListenerEnabled: Boolean = false,
     val postNotificationsGranted: Boolean = false,
     val promotedNotificationsAllowed: Boolean = false,
+    val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
     val notificationServiceDebugEnabled: Boolean = false,
 ) {
@@ -250,6 +277,7 @@ private fun WeModernApp(
     onDismissSyncDialog: () -> Unit,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
+    onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onShowSyncSetup: () -> Unit,
     onPostMessageTest: () -> Unit,
@@ -274,6 +302,7 @@ private fun WeModernApp(
                 state = state,
                 onOpenListenerSettings = onOpenListenerSettings,
                 onRequestNotifications = onRequestNotifications,
+                onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
                 onOpenAppSettings = onOpenAppSettings,
             )
             SyncRemovalPanel(state = state, onShowSetup = onShowSyncSetup)
@@ -352,6 +381,12 @@ private fun StatusPanel(state: SetupState) {
                 enabledText = stringResource(R.string.status_system_allowed),
                 disabledText = stringResource(R.string.status_system_not_allowed),
             )
+            StatusLine(
+                label = stringResource(R.string.status_battery_optimization_label),
+                enabled = state.batteryOptimizationIgnored,
+                enabledText = stringResource(R.string.status_ignored),
+                disabledText = stringResource(R.string.status_not_ignored),
+            )
         }
     }
 }
@@ -361,6 +396,7 @@ private fun PermissionsPanel(
     state: SetupState,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
+    onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
 ) {
     ActionPanel(
@@ -380,6 +416,17 @@ private fun PermissionsPanel(
             ),
             enabled = !state.postNotificationsGranted,
             onClick = onRequestNotifications,
+        )
+        ActionButton(
+            text = stringResource(
+                if (state.batteryOptimizationIgnored) {
+                    R.string.action_battery_optimization_ignored
+                } else {
+                    R.string.action_request_battery_optimization
+                }
+            ),
+            enabled = !state.batteryOptimizationIgnored,
+            onClick = onRequestIgnoreBatteryOptimization,
         )
         OutlinedButton(
             modifier = Modifier.fillMaxWidth(),

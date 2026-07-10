@@ -10,6 +10,8 @@
     <string name="action_listener_enabled">✓ 通知使用权已开启</string>
     <string name="action_request_notifications">授予通知权限</string>
     <string name="action_notifications_enabled">✓ 通知权限已开启</string>
+    <string name="action_request_battery_optimization">允许不受限制的电池使用</string>
+    <string name="action_battery_optimization_ignored">✓ 已解除电池优化</string>
     <string name="action_open_app_settings">打开应用设置</string>
     <string name="action_sync_removal_setup">查看 ADB 设置命令</string>
     <string name="action_sync_removal_ready">✓ 同步移除已就绪</string>
@@ -22,6 +24,8 @@
     <string name="status_notifications_label">通知权限</string>
     <string name="status_live_update">Live Update: %1$s</string>
     <string name="status_live_update_label">Live Update</string>
+    <string name="status_battery_optimization">电池优化: %1$s</string>
+    <string name="status_battery_optimization_label">电池优化</string>
     <string name="status_read_logs">日志读取权限: %1$s</string>
     <string name="status_read_logs_label">日志读取权限</string>
     <string name="status_notification_service_debug">NotificationService debug 日志: %1$s</string>
@@ -31,7 +35,10 @@
     <string name="status_disabled">未开启</string>
     <string name="status_system_allowed">系统允许</string>
     <string name="status_system_not_allowed">系统未允许</string>
+    <string name="status_ignored">已忽略</string>
+    <string name="status_not_ignored">未忽略</string>
     <string name="dialog_notifications_enabled">通知权限已开启</string>
+    <string name="dialog_battery_optimization_ignored">WeModern 已解除电池优化</string>
     <string name="dialog_sync_removal_title">ADB 设置</string>
     <string name="dialog_sync_removal_message">运行以下命令后重启:\n\nadb shell pm grant %1$s android.permission.READ_LOGS\nadb shell setprop persist.log.tag.NotificationService DEBUG\nadb reboot</string>
     <string name="test_notification_text">测试通知</string>
