@@ -42,3 +42,7 @@ adb shell pm grant me.jaspr.wemodern android.permission.READ_LOGS
 adb shell setprop persist.log.tag.NotificationService DEBUG
 adb reboot
 ```
+
+## Launcher Behavior
+
+Tapping the WeModern app icon opens WeChat. Touch and hold the icon to open one of the three most recent WeChat conversations or select **Settings**, which is always the final shortcut, to open the WeModern setup screen.

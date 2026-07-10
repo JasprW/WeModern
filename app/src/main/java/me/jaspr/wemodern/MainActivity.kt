@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -17,70 +19,94 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BatterySaver
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.rounded.Timeline
+import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var setupState by mutableStateOf(SetupState())
-    private var showSyncDialog by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         NotificationChannels.ensure(this)
+        ConversationShortcuts.ensureSettingsShortcut(this)
         getSystemService(NotificationManager::class.java).apply {
             cancel(NOTIFICATION_TEST_MESSAGE)
             cancel(NOTIFICATION_TEST_VOICE_CALL)
@@ -92,19 +118,15 @@ class MainActivity : ComponentActivity() {
             WeModernTheme {
                 WeModernApp(
                     state = setupState,
-                    showSyncDialog = showSyncDialog,
-                    onDismissSyncDialog = { showSyncDialog = false },
+                    syncCommands = getString(R.string.sync_commands, packageName),
                     onOpenListenerSettings = {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
                     onRequestNotifications = { requestPostNotifications() },
+                    onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
-                    onOpenAppSettings = {
-                        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.parse("package:$packageName")
-                        })
-                    },
-                    onShowSyncSetup = { showSyncDialog = true },
+                    onOpenAppSettings = { openAppSettings() },
+                    onCopySyncCommands = { copySyncCommands() },
                     onPostMessageTest = { postTestNotification() },
                     onPostVoiceCallTest = { postCallTestNotification(video = false) },
                     onPostVideoCallTest = { postCallTestNotification(video = true) },
@@ -204,6 +226,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openPromotedNotificationSettings() {
+        if (Build.VERSION.SDK_INT < 36) return
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            )
+        }.onFailure {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            }.onFailure {
+                openAppSettings()
+            }
+        }
+    }
+
+    private fun openAppSettings() {
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:$packageName")
+        })
+    }
+
+    private fun copySyncCommands() {
+        val commands = getString(R.string.sync_commands, packageName)
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(
+            ClipData.newPlainText(getString(R.string.sync_commands_clip_label), commands)
+        )
+    }
+
     private fun postTestNotification() {
         val notification = Notification.Builder(this, NotificationChannels.STATUS)
             .setSmallIcon(R.drawable.ic_wechat_scan_24dp)
@@ -265,374 +319,794 @@ private data class SetupState(
     val readLogsGranted: Boolean = false,
     val notificationServiceDebugEnabled: Boolean = false,
 ) {
+    val coreReady: Boolean
+        get() = notificationListenerEnabled && postNotificationsGranted
+
+    val requiredStepsRemaining: Int
+        get() = listOf(notificationListenerEnabled, postNotificationsGranted).count { !it }
+
+    val nextRequiredStep: RequiredSetupStep?
+        get() = when {
+            !notificationListenerEnabled -> RequiredSetupStep.NotificationAccess
+            !postNotificationsGranted -> RequiredSetupStep.PostNotifications
+            else -> null
+        }
+
+    val liveUpdatesAvailable: Boolean
+        get() = Build.VERSION.SDK_INT >= 36
+
     val syncRemovalReady: Boolean
         get() = readLogsGranted && notificationServiceDebugEnabled
+}
+
+private enum class RequiredSetupStep {
+    NotificationAccess,
+    PostNotifications,
+}
+
+private enum class SetupStatusTone {
+    Success,
+    Attention,
+    Neutral,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WeModernApp(
     state: SetupState,
-    showSyncDialog: Boolean,
-    onDismissSyncDialog: () -> Unit,
+    syncCommands: String,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
+    onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
-    onShowSyncSetup: () -> Unit,
+    onCopySyncCommands: () -> Unit,
     onPostMessageTest: () -> Unit,
     onPostVoiceCallTest: () -> Unit,
     onPostVideoCallTest: () -> Unit,
 ) {
-    val scrollState = rememberScrollState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val messageSentText = stringResource(R.string.snackbar_test_message_sent)
+    val voiceSentText = stringResource(R.string.snackbar_test_voice_sent)
+    val videoSentText = stringResource(R.string.snackbar_test_video_sent)
+    val commandsCopiedText = stringResource(R.string.snackbar_sync_commands_copied)
+    var syncExpanded by remember { mutableStateOf(false) }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                actions = {
+                    IconButton(onClick = onOpenAppSettings) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.action_open_app_settings),
+                        )
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+                .padding(padding),
         ) {
-            Header()
-            StatusPanel(state)
-            PermissionsPanel(
-                state = state,
-                onOpenListenerSettings = onOpenListenerSettings,
-                onRequestNotifications = onRequestNotifications,
-                onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
-                onOpenAppSettings = onOpenAppSettings,
-            )
-            SyncRemovalPanel(state = state, onShowSetup = onShowSyncSetup)
-            TestsPanel(
-                onPostMessageTest = onPostMessageTest,
-                onPostVoiceCallTest = onPostVoiceCallTest,
-                onPostVideoCallTest = onPostVideoCallTest,
-            )
-        }
-    }
-
-    if (showSyncDialog) {
-        AlertDialog(
-            onDismissRequest = onDismissSyncDialog,
-            icon = { Icon(Icons.Rounded.Sync, contentDescription = null) },
-            title = { Text(stringResource(R.string.dialog_sync_removal_title)) },
-            text = {
-                Text(
-                    text = stringResource(
-                        R.string.dialog_sync_removal_message,
-                        LocalContext.current.packageName,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                Button(onClick = onDismissSyncDialog) {
-                    Text(stringResource(android.R.string.ok))
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 600.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 20.dp),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp),
+                verticalArrangement = Arrangement.spacedBy(28.dp),
+            ) {
+                item {
+                    SetupHero(
+                        state = state,
+                        onOpenListenerSettings = onOpenListenerSettings,
+                        onRequestNotifications = onRequestNotifications,
+                    )
                 }
-            },
-        )
-    }
-}
-
-@Composable
-private fun Header() {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(R.string.app_name),
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = stringResource(R.string.subtitle),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun StatusPanel(state: SetupState) {
-    ElevatedCard(
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SectionTitle(text = stringResource(R.string.section_status), icon = Icons.Rounded.Info)
-            StatusLine(
-                label = stringResource(R.string.status_listener_label),
-                enabled = state.notificationListenerEnabled,
-            )
-            StatusLine(
-                label = stringResource(R.string.status_notifications_label),
-                enabled = state.postNotificationsGranted,
-            )
-            StatusLine(
-                label = stringResource(R.string.status_live_update_label),
-                enabled = state.promotedNotificationsAllowed,
-                enabledText = stringResource(R.string.status_system_allowed),
-                disabledText = stringResource(R.string.status_system_not_allowed),
-            )
-            StatusLine(
-                label = stringResource(R.string.status_battery_optimization_label),
-                enabled = state.batteryOptimizationIgnored,
-                enabledText = stringResource(R.string.status_ignored),
-                disabledText = stringResource(R.string.status_not_ignored),
-            )
+                item {
+                    SettingsSection(
+                        state = state,
+                        onOpenListenerSettings = onOpenListenerSettings,
+                        onRequestNotifications = onRequestNotifications,
+                        onOpenPromotedNotificationSettings = onOpenPromotedNotificationSettings,
+                        onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
+                    )
+                }
+                item {
+                    AdvancedSection(
+                        state = state,
+                        expanded = syncExpanded,
+                        syncCommands = syncCommands,
+                        onToggleExpanded = { syncExpanded = !syncExpanded },
+                        onCopySyncCommands = {
+                            onCopySyncCommands()
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(commandsCopiedText)
+                            }
+                        },
+                    )
+                }
+                item {
+                    TestsSection(
+                        enabled = state.coreReady,
+                        onPostMessageTest = {
+                            onPostMessageTest()
+                            coroutineScope.launch { snackbarHostState.showSnackbar(messageSentText) }
+                        },
+                        onPostVoiceCallTest = {
+                            onPostVoiceCallTest()
+                            coroutineScope.launch { snackbarHostState.showSnackbar(voiceSentText) }
+                        },
+                        onPostVideoCallTest = {
+                            onPostVideoCallTest()
+                            coroutineScope.launch { snackbarHostState.showSnackbar(videoSentText) }
+                        },
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun PermissionsPanel(
+private fun SetupHero(
     state: SetupState,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
-    onRequestIgnoreBatteryOptimization: () -> Unit,
-    onOpenAppSettings: () -> Unit,
 ) {
-    ActionPanel(
-        title = stringResource(R.string.section_permissions),
-        icon = Icons.Rounded.Security,
-    ) {
-        ActionButton(
-            text = stringResource(
-                if (state.notificationListenerEnabled) R.string.action_listener_enabled else R.string.action_open_listener
-            ),
-            enabled = !state.notificationListenerEnabled,
-            onClick = onOpenListenerSettings,
-        )
-        ActionButton(
-            text = stringResource(
-                if (state.postNotificationsGranted) R.string.action_notifications_enabled else R.string.action_request_notifications
-            ),
-            enabled = !state.postNotificationsGranted,
-            onClick = onRequestNotifications,
-        )
-        ActionButton(
-            text = stringResource(
-                if (state.batteryOptimizationIgnored) {
-                    R.string.action_battery_optimization_ignored
-                } else {
-                    R.string.action_request_battery_optimization
-                }
-            ),
-            enabled = !state.batteryOptimizationIgnored,
-            onClick = onRequestIgnoreBatteryOptimization,
-        )
-        OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            onClick = onOpenAppSettings,
-            shape = MaterialTheme.shapes.large,
-        ) {
-            Icon(Icons.Rounded.Settings, contentDescription = null)
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.action_open_app_settings))
-        }
+    val isReady = state.coreReady
+    val containerColor = if (isReady) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.tertiaryContainer
     }
-}
-
-@Composable
-private fun SyncRemovalPanel(state: SetupState, onShowSetup: () -> Unit) {
-    ActionPanel(
-        title = stringResource(R.string.section_sync_removal),
-        icon = Icons.Rounded.Sync,
-    ) {
-        ListItem(
-            colors = ListItemDefaults.colors(
-                containerColor = Color.Transparent,
-            ),
-            headlineContent = { Text(stringResource(R.string.status_read_logs_label)) },
-            supportingContent = {
-                Text(statusText(state.readLogsGranted))
-            },
-            leadingContent = {
-                StatusIcon(enabled = state.readLogsGranted)
-            },
-        )
-        ListItem(
-            colors = ListItemDefaults.colors(
-                containerColor = Color.Transparent,
-            ),
-            headlineContent = { Text(stringResource(R.string.status_notification_service_debug_label)) },
-            supportingContent = {
-                Text(statusText(state.notificationServiceDebugEnabled))
-            },
-            leadingContent = {
-                StatusIcon(enabled = state.notificationServiceDebugEnabled)
-            },
-        )
-        AssistChip(
-            onClick = onShowSetup,
-            leadingIcon = {
-                Icon(
-                    imageVector = if (state.syncRemovalReady) Icons.Rounded.CheckCircle else Icons.Rounded.Bolt,
-                    contentDescription = null,
-                )
-            },
-            label = {
-                Text(
-                    text = if (state.syncRemovalReady) {
-                        stringResource(R.string.action_sync_removal_ready)
-                    } else {
-                        stringResource(R.string.action_sync_removal_setup)
-                    },
-                )
-            },
-        )
-        Text(
-            text = stringResource(R.string.status_reboot_note),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    val contentColor = if (isReady) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onTertiaryContainer
     }
-}
+    val accentColor = if (isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+    val accentContentColor = if (isReady) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary
 
-@Composable
-private fun TestsPanel(
-    onPostMessageTest: () -> Unit,
-    onPostVoiceCallTest: () -> Unit,
-    onPostVideoCallTest: () -> Unit,
-) {
-    ActionPanel(
-        title = stringResource(R.string.section_tests),
-        icon = Icons.Rounded.Notifications,
-    ) {
-        OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            onClick = onPostMessageTest,
-            shape = MaterialTheme.shapes.large,
-        ) {
-            Icon(Icons.Rounded.Notifications, contentDescription = null)
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.action_test_notification))
-        }
-        FilledTonalButton(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            onClick = onPostVoiceCallTest,
-            shape = MaterialTheme.shapes.large,
-        ) {
-            Icon(Icons.Rounded.Phone, contentDescription = null)
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.action_test_voice_call))
-        }
-        FilledTonalButton(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            onClick = onPostVideoCallTest,
-            shape = MaterialTheme.shapes.large,
-        ) {
-            Icon(Icons.Rounded.Phone, contentDescription = null)
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.action_test_video_call))
-        }
-    }
-}
-
-@Composable
-private fun ActionPanel(
-    title: String,
-    icon: ImageVector,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(
+            topStart = 32.dp,
+            topEnd = 32.dp,
+            bottomEnd = 12.dp,
+            bottomStart = 32.dp,
         ),
+        color = containerColor,
+        contentColor = contentColor,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            SectionTitle(text = title, icon = icon)
-            content()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    modifier = Modifier.size(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = accentColor,
+                    contentColor = accentContentColor,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isReady) Icons.Rounded.Check else Icons.Rounded.Bolt,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = stringResource(
+                            if (isReady) R.string.setup_state_running else R.string.setup_state_required
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = contentColor.copy(alpha = 0.72f),
+                    )
+                    Text(
+                        text = if (isReady) {
+                            stringResource(R.string.setup_ready_title)
+                        } else {
+                            pluralStringResource(
+                                R.plurals.setup_remaining_steps,
+                                state.requiredStepsRemaining,
+                                state.requiredStepsRemaining,
+                            )
+                        },
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(
+                    if (isReady) R.string.setup_ready_message else R.string.setup_remaining_message
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+
+            if (isReady) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CapabilityPill(text = stringResource(R.string.capability_notification_rewrite))
+                    if (state.promotedNotificationsAllowed) {
+                        CapabilityPill(text = stringResource(R.string.status_live_update_label))
+                    }
+                }
+            } else {
+                val nextStep = state.nextRequiredStep
+                Button(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp),
+                    onClick = when (nextStep) {
+                        RequiredSetupStep.NotificationAccess -> onOpenListenerSettings
+                        RequiredSetupStep.PostNotifications -> onRequestNotifications
+                        null -> ({})
+                    },
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+                ) {
+                    Icon(
+                        imageVector = if (nextStep == RequiredSetupStep.NotificationAccess) {
+                            Icons.Rounded.Security
+                        } else {
+                            Icons.Rounded.NotificationsActive
+                        },
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Text(
+                        text = stringResource(
+                            if (nextStep == RequiredSetupStep.NotificationAccess) {
+                                R.string.action_open_listener
+                            } else {
+                                R.string.action_request_notifications
+                            }
+                        ),
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SectionTitle(text: String, icon: ImageVector) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun CapabilityPill(text: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.primary,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
     }
 }
 
 @Composable
-private fun StatusLine(
-    label: String,
-    enabled: Boolean,
-    enabledText: String = stringResource(R.string.status_enabled),
-    disabledText: String = stringResource(R.string.status_disabled),
+private fun SettingsSection(
+    state: SetupState,
+    onOpenListenerSettings: () -> Unit,
+    onRequestNotifications: () -> Unit,
+    onOpenPromotedNotificationSettings: () -> Unit,
+    onRequestIgnoreBatteryOptimization: () -> Unit,
 ) {
+    val firstShape = RoundedCornerShape(
+        topStart = 28.dp,
+        topEnd = 28.dp,
+        bottomStart = 12.dp,
+        bottomEnd = 12.dp,
+    )
+    val middleShape = RoundedCornerShape(12.dp)
+    val lastShape = RoundedCornerShape(
+        topStart = 12.dp,
+        topEnd = 12.dp,
+        bottomStart = 28.dp,
+        bottomEnd = 28.dp,
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(title = stringResource(R.string.section_setup))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            SettingRow(
+                title = stringResource(R.string.setup_notification_access_title),
+                supporting = stringResource(R.string.setup_notification_access_description),
+                icon = Icons.Rounded.Security,
+                status = stringResource(
+                    if (state.notificationListenerEnabled) R.string.setup_status_enabled else R.string.setup_status_pending
+                ),
+                statusTone = if (state.notificationListenerEnabled) SetupStatusTone.Success else SetupStatusTone.Attention,
+                highlighted = state.nextRequiredStep == RequiredSetupStep.NotificationAccess,
+                shape = firstShape,
+                onClick = if (state.notificationListenerEnabled) null else onOpenListenerSettings,
+            )
+            SettingRow(
+                title = stringResource(R.string.setup_post_notifications_title),
+                supporting = stringResource(R.string.setup_post_notifications_description),
+                icon = Icons.Rounded.NotificationsActive,
+                status = stringResource(
+                    if (state.postNotificationsGranted) R.string.setup_status_enabled else R.string.setup_status_pending
+                ),
+                statusTone = if (state.postNotificationsGranted) SetupStatusTone.Success else SetupStatusTone.Attention,
+                highlighted = state.nextRequiredStep == RequiredSetupStep.PostNotifications,
+                shape = middleShape,
+                onClick = if (state.postNotificationsGranted) null else onRequestNotifications,
+            )
+            if (state.liveUpdatesAvailable) {
+                val liveUpdateBlocked = !state.postNotificationsGranted
+                SettingRow(
+                    title = stringResource(R.string.status_live_update_label),
+                    supporting = stringResource(R.string.setup_live_update_description),
+                    icon = Icons.Rounded.Timeline,
+                    status = stringResource(
+                        when {
+                            state.promotedNotificationsAllowed -> R.string.setup_status_enabled
+                            liveUpdateBlocked -> R.string.setup_status_requires_notifications
+                            else -> R.string.setup_status_recommended
+                        }
+                    ),
+                    statusTone = when {
+                        state.promotedNotificationsAllowed -> SetupStatusTone.Success
+                        liveUpdateBlocked -> SetupStatusTone.Neutral
+                        else -> SetupStatusTone.Attention
+                    },
+                    highlighted = false,
+                    shape = middleShape,
+                    onClick = if (state.promotedNotificationsAllowed || liveUpdateBlocked) {
+                        null
+                    } else {
+                        onOpenPromotedNotificationSettings
+                    },
+                )
+            }
+            SettingRow(
+                title = stringResource(R.string.setup_battery_title),
+                supporting = stringResource(R.string.setup_battery_description),
+                icon = Icons.Rounded.BatterySaver,
+                status = stringResource(
+                    if (state.batteryOptimizationIgnored) R.string.setup_status_enabled else R.string.setup_status_recommended
+                ),
+                statusTone = if (state.batteryOptimizationIgnored) SetupStatusTone.Success else SetupStatusTone.Attention,
+                highlighted = false,
+                shape = lastShape,
+                onClick = if (state.batteryOptimizationIgnored) null else onRequestIgnoreBatteryOptimization,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(
+    title: String,
+    supporting: String,
+    icon: ImageVector,
+    status: String,
+    statusTone: SetupStatusTone,
+    highlighted: Boolean,
+    shape: Shape,
+    onClick: (() -> Unit)?,
+) {
+    val containerColor = if (highlighted) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val modifier = Modifier
+        .fillMaxWidth()
+        .semantics(mergeDescendants = true) {}
+    val rowContent: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(17.dp),
+                color = if (highlighted) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                },
+                contentColor = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                )
+            }
+            SetupStatusLabel(
+                text = status,
+                tone = statusTone,
+                actionable = onClick != null,
+            )
+        }
+    }
+
+    if (onClick != null) {
+        Surface(
+            modifier = modifier,
+            onClick = onClick,
+            shape = shape,
+            color = containerColor,
+        ) {
+            rowContent()
+        }
+    } else {
+        Surface(
+            modifier = modifier,
+            shape = shape,
+            color = containerColor,
+        ) {
+            rowContent()
+        }
+    }
+}
+
+@Composable
+private fun SetupStatusLabel(
+    text: String,
+    tone: SetupStatusTone,
+    actionable: Boolean,
+) {
+    val tint = when (tone) {
+        SetupStatusTone.Success -> MaterialTheme.colorScheme.primary
+        SetupStatusTone.Attention -> MaterialTheme.colorScheme.tertiary
+        SetupStatusTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (tone == SetupStatusTone.Success) {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = tint,
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = tint,
+        )
+        if (actionable) {
+            Icon(
+                imageVector = Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = tint,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String, supporting: String? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
         )
-        AssistChip(
-            onClick = {},
-            enabled = false,
-            leadingIcon = { StatusIcon(enabled = enabled) },
-            label = { Text(if (enabled) enabledText else disabledText) },
+        if (supporting != null) {
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AdvancedSection(
+    state: SetupState,
+    expanded: Boolean,
+    syncCommands: String,
+    onToggleExpanded: () -> Unit,
+    onCopySyncCommands: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(title = stringResource(R.string.section_advanced))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onToggleExpanded)
+                        .semantics(mergeDescendants = true) {}
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        modifier = Modifier.size(48.dp),
+                        shape = RoundedCornerShape(17.dp),
+                        color = if (state.syncRemovalReady) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        },
+                        contentColor = if (state.syncRemovalReady) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.sync_removal_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = stringResource(R.string.sync_removal_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            if (state.syncRemovalReady) R.string.setup_status_ready else R.string.setup_status_needs_adb
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (state.syncRemovalReady) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        },
+                    )
+                    Icon(
+                        imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = stringResource(
+                            if (expanded) R.string.action_collapse else R.string.action_expand
+                        ),
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                ) {
+                    Column {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            AdvancedConditionRow(
+                                title = stringResource(R.string.status_read_logs_label),
+                                enabled = state.readLogsGranted,
+                            )
+                            AdvancedConditionRow(
+                                title = stringResource(R.string.status_notification_service_debug_label),
+                                enabled = state.notificationServiceDebugEnabled,
+                            )
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = syncCommands,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End,
+                                    ) {
+                                        TextButton(onClick = onCopySyncCommands) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ContentCopy,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                            Spacer(Modifier.size(8.dp))
+                                            Text(stringResource(R.string.action_copy_commands))
+                                        }
+                                    }
+                                }
+                            }
+                            Text(
+                                text = stringResource(R.string.status_reboot_note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdvancedConditionRow(title: String, enabled: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = if (enabled) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+            contentDescription = null,
+            tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            modifier = Modifier.weight(1f),
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            text = stringResource(if (enabled) R.string.setup_status_enabled else R.string.setup_status_missing),
+            style = MaterialTheme.typography.labelLarge,
+            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
 @Composable
-private fun StatusIcon(enabled: Boolean) {
-    Icon(
-        imageVector = if (enabled) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
-        contentDescription = null,
-        tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+private fun TestsSection(
+    enabled: Boolean,
+    onPostMessageTest: () -> Unit,
+    onPostVoiceCallTest: () -> Unit,
+    onPostVideoCallTest: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(
+            title = stringResource(R.string.section_tests),
+            supporting = stringResource(
+                if (enabled) R.string.tests_support_ready else R.string.tests_support_locked
+            ),
+        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Row(
+                modifier = Modifier.padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TestActionButton(
+                    modifier = Modifier.weight(1f),
+                    text = stringResource(R.string.test_short_message),
+                    icon = Icons.Rounded.Notifications,
+                    enabled = enabled,
+                    onClick = onPostMessageTest,
+                )
+                TestActionButton(
+                    modifier = Modifier.weight(1f),
+                    text = stringResource(R.string.test_short_voice),
+                    icon = Icons.Rounded.PhoneInTalk,
+                    enabled = enabled,
+                    onClick = onPostVoiceCallTest,
+                )
+                TestActionButton(
+                    modifier = Modifier.weight(1f),
+                    text = stringResource(R.string.test_short_video),
+                    icon = Icons.Rounded.Videocam,
+                    enabled = enabled,
+                    onClick = onPostVideoCallTest,
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun ActionButton(text: String, enabled: Boolean, onClick: () -> Unit) {
-    Button(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+private fun TestActionButton(
+    modifier: Modifier,
+    text: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(
+        modifier = modifier.heightIn(min = 56.dp),
         enabled = enabled,
         onClick = onClick,
-        shape = MaterialTheme.shapes.large,
+        shape = CircleShape,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ),
     ) {
-        Text(text = text)
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+        )
+        Spacer(Modifier.size(6.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+        )
     }
-}
-
-@Composable
-private fun statusText(enabled: Boolean): String {
-    return stringResource(if (enabled) R.string.status_enabled else R.string.status_disabled)
 }
 
 @Composable
@@ -647,24 +1121,26 @@ private fun WeModernTheme(content: @Composable () -> Unit) {
     }
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = androidx.compose.material3.Typography(),
+        typography = Typography(),
         content = content,
     )
 }
 
 private val LightColorScheme = lightColorScheme(
     primary = Color(0xFF006C48),
-    onPrimary = Color.White,
+    onPrimary = Color(0xFFF2FFF7),
     primaryContainer = Color(0xFF8DF8BF),
     onPrimaryContainer = Color(0xFF002114),
     secondary = Color(0xFF4D6356),
-    onSecondary = Color.White,
+    onSecondary = Color(0xFFF4FFF7),
     secondaryContainer = Color(0xFFCFE9D8),
     onSecondaryContainer = Color(0xFF0A1F15),
     tertiary = Color(0xFF3C6472),
-    onTertiary = Color.White,
+    onTertiary = Color(0xFFF2FBFF),
     tertiaryContainer = Color(0xFFC0E9F9),
     onTertiaryContainer = Color(0xFF001F28),
+    surface = Color(0xFFF7FAF5),
+    onSurface = Color(0xFF191C1A),
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -680,4 +1156,6 @@ private val DarkColorScheme = darkColorScheme(
     onTertiary = Color(0xFF073542),
     tertiaryContainer = Color(0xFF224C59),
     onTertiaryContainer = Color(0xFFC0E9F9),
+    surface = Color(0xFF101512),
+    onSurface = Color(0xFFE1E4DF),
 )

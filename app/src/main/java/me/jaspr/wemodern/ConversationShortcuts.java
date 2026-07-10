@@ -37,6 +37,7 @@ final class ConversationShortcuts {
     private static final String STORE = "conversation_shortcuts";
     private static final String KEY_RECENT = "recent";
     private static final String ICON_DIRECTORY = "conversation_shortcut_icons";
+    private static final String SETTINGS_SHORTCUT_ID = "wemodern_settings";
     private static final int MAX_RECENT = 3;
     private static final int SHORTCUT_ICON_SIZE_PX = 192;
     private static final int ADAPTIVE_ICON_INSET_PX = 28;
@@ -68,26 +69,24 @@ final class ConversationShortcuts {
         save(context, recent);
         deleteStaleIcons(context, recent);
 
-        int shortcutCount = Math.min(recent.size(),
-                Math.min(MAX_RECENT, manager.getMaxShortcutCountPerActivity()));
-        List<ShortcutInfo> shortcuts = new ArrayList<>(shortcutCount);
-        for (int index = 0; index < shortcutCount; index++) {
-            Entry entry = recent.get(index);
-            Icon shortcutIcon = loadIcon(context, entry.id);
-            if (shortcutIcon == null && entry.id.equals(conversationId)) {
-                shortcutIcon = currentShortcutIcon;
-            }
-            shortcuts.add(buildShortcut(context, entry, index, shortcutIcon));
-        }
-
-        try {
-            if (!manager.setDynamicShortcuts(shortcuts)) {
-                Log.w(TAG, "launcher rejected dynamic conversation shortcuts");
-            }
+        if (replaceDynamicShortcuts(
+                context, manager, recent, conversationId, currentShortcutIcon)) {
             manager.reportShortcutUsed(conversationId);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            Log.w(TAG, "failed to publish conversation shortcuts", e);
         }
+    }
+
+    static void ensureSettingsShortcut(Context context) {
+        ShortcutManager manager = context.getSystemService(ShortcutManager.class);
+        if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
+        try {
+            for (ShortcutInfo shortcut : manager.getDynamicShortcuts()) {
+                if (SETTINGS_SHORTCUT_ID.equals(shortcut.getId())) return;
+            }
+        } catch (IllegalStateException e) {
+            Log.w(TAG, "failed to inspect dynamic shortcuts", e);
+            return;
+        }
+        replaceDynamicShortcuts(context, manager, load(context), null, null);
     }
 
     static void registerContentIntent(String conversationId, PendingIntent contentIntent) {
@@ -110,18 +109,8 @@ final class ConversationShortcuts {
 
     static void refreshIcons(Context context) {
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
-        if (manager == null) return;
-        List<Entry> recent = load(context);
-        List<ShortcutInfo> shortcuts = new ArrayList<>(recent.size());
-        for (int index = 0; index < recent.size(); index++) {
-            Entry entry = recent.get(index);
-            shortcuts.add(buildShortcut(context, entry, index, loadIcon(context, entry.id)));
-        }
-        try {
-            manager.updateShortcuts(shortcuts);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            Log.w(TAG, "failed to refresh conversation shortcut icons", e);
-        }
+        if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
+        replaceDynamicShortcuts(context, manager, load(context), null, null);
     }
 
     static boolean openConversation(Context context, String conversationId) {
@@ -148,7 +137,7 @@ final class ConversationShortcuts {
             shortcutIcon = Icon.createWithResource(context, R.mipmap.ic_launcher);
         }
         ShortcutInfo.Builder builder = new ShortcutInfo.Builder(context, entry.id)
-                .setActivity(new ComponentName(context, MainActivity.class))
+                .setActivity(new ComponentName(context, LauncherActivity.class))
                 .setShortLabel(entry.label)
                 .setLongLabel(entry.label)
                 .setRank(rank)
@@ -167,6 +156,53 @@ final class ConversationShortcuts {
             builder.setCategories(Collections.singleton(ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION));
         }
         return builder.build();
+    }
+
+    private static ShortcutInfo buildSettingsShortcut(Context context, int rank) {
+        Intent intent = new Intent(context, MainActivity.class)
+                .setAction(Intent.ACTION_VIEW)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return new ShortcutInfo.Builder(context, SETTINGS_SHORTCUT_ID)
+                .setActivity(new ComponentName(context, LauncherActivity.class))
+                .setShortLabel(context.getString(R.string.shortcut_settings_short_label))
+                .setLongLabel(context.getString(R.string.shortcut_settings_long_label))
+                .setRank(rank)
+                .setIcon(Icon.createWithResource(context, R.drawable.ic_settings_shortcut_24))
+                .setIntent(intent)
+                .build();
+    }
+
+    private static boolean replaceDynamicShortcuts(
+            Context context,
+            ShortcutManager manager,
+            List<Entry> recent,
+            String currentConversationId,
+            Icon currentShortcutIcon) {
+        int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
+        if (maxShortcutCount == 0) return false;
+        int conversationCount = Math.min(
+                recent.size(), Math.min(MAX_RECENT, Math.max(0, maxShortcutCount - 1)));
+        List<ShortcutInfo> shortcuts = new ArrayList<>(conversationCount + 1);
+        for (int index = 0; index < conversationCount; index++) {
+            Entry entry = recent.get(index);
+            Icon shortcutIcon = loadIcon(context, entry.id);
+            if (shortcutIcon == null && entry.id.equals(currentConversationId)) {
+                shortcutIcon = currentShortcutIcon;
+            }
+            shortcuts.add(buildShortcut(context, entry, index, shortcutIcon));
+        }
+        shortcuts.add(buildSettingsShortcut(context, conversationCount));
+
+        try {
+            if (!manager.setDynamicShortcuts(shortcuts)) {
+                Log.w(TAG, "launcher rejected dynamic shortcuts");
+                return false;
+            }
+            return true;
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            Log.w(TAG, "failed to publish dynamic shortcuts", e);
+            return false;
+        }
     }
 
     private static Icon persistIcon(Context context, String conversationId, Icon source) {
