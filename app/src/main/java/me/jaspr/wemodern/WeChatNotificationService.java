@@ -19,6 +19,7 @@ import android.util.Log;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -30,9 +31,9 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final String WECHAT_PACKAGE = "com.tencent.mm";
     private static final String WECHAT_VOIP_CHANNEL = "voip_notify_channel_new_id";
     private static final String MESSAGE_GROUP_KEY = "wechat.rewritten";
-    private static final String EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing";
     private static final String REPLACEMENT_STORE = "sync_removal_replacements";
     private static final String STORAGE_SEPARATOR = "\u001f";
+    private static final long ORIGINAL_SNOOZE_DURATION_MS = 24L * 60L * 60L * 1000L;
     private static final int MAX_HISTORY = 8;
     private static final int TEST_VOICE_CALL_NOTIFICATION_ID = 101;
     private static final int TEST_VIDEO_CALL_NOTIFICATION_ID = 102;
@@ -498,13 +499,8 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setChronometerCountDown(false)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setDefaults(Notification.DEFAULT_ALL)
                 .setCategory(Notification.CATEGORY_CALL)
                 .setColor(0xff33b332);
-
-        if (Build.VERSION.SDK_INT >= 36) {
-            builder.setStyle(CallProgressStyle.create(callIcon));
-        }
 
         PendingIntent contentIntent = original.contentIntent;
         if (contentIntent != null) builder.setContentIntent(contentIntent);
@@ -513,9 +509,8 @@ public class WeChatNotificationService extends NotificationListenerService {
 
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         try {
-            Notification notification = builder.build();
+            Notification notification = CallProgressStyle.build(builder, callIcon);
             if (Build.VERSION.SDK_INT >= 36) {
-                notification.extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true);
                 Log.i(TAG, "voip promotedAllowed="
                         + getSystemService(NotificationManager.class).canPostPromotedNotifications()
                         + ", promotable=" + notification.hasPromotableCharacteristics());
@@ -523,15 +518,9 @@ public class WeChatNotificationService extends NotificationListenerService {
             nm.notify(voipReplacementId(sbn), notification);
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to post voip with material small icon, falling back", e);
-            builder.setSmallIcon(R.drawable.ic_material_call_24);
-            if (Build.VERSION.SDK_INT >= 36) {
-                builder.setStyle(CallProgressStyle.create(
-                        Icon.createWithResource(this, R.drawable.ic_material_call_24)));
-            }
-            Notification notification = builder.build();
-            if (Build.VERSION.SDK_INT >= 36) {
-                notification.extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true);
-            }
+            Icon fallbackIcon = Icon.createWithResource(this, R.drawable.ic_material_call_24);
+            builder.setSmallIcon(fallbackIcon);
+            Notification notification = CallProgressStyle.build(builder, fallbackIcon);
             nm.notify(voipReplacementId(sbn), notification);
         }
     }
@@ -571,12 +560,21 @@ public class WeChatNotificationService extends NotificationListenerService {
     private void hideOriginal(StatusBarNotification sbn) {
         try {
             selfHiddenOriginals.add(sbn.getKey());
-            cancelNotification(sbn.getKey());
-            Log.d(TAG, "cancel original wechat notification: " + sbn.getKey());
+            if (shouldSnoozeOriginal(sbn.getNotification().flags)) {
+                snoozeNotification(sbn.getKey(), ORIGINAL_SNOOZE_DURATION_MS);
+                Log.d(TAG, "snooze protected original wechat notification: " + sbn.getKey());
+            } else {
+                cancelNotification(sbn.getKey());
+                Log.d(TAG, "cancel original wechat notification: " + sbn.getKey());
+            }
         } catch (RuntimeException e) {
             selfHiddenOriginals.remove(sbn.getKey());
             Log.w(TAG, "failed to hide original: " + sbn.getKey(), e);
         }
+    }
+
+    static boolean shouldSnoozeOriginal(int flags) {
+        return (flags & (Notification.FLAG_FOREGROUND_SERVICE | Notification.FLAG_NO_CLEAR)) != 0;
     }
 
     private static String reasonName(int reason) {
@@ -725,14 +723,33 @@ public class WeChatNotificationService extends NotificationListenerService {
             return new ParsedVoipNotification(title, text, isVideoCall(title, text));
         }
 
-        private static boolean isVideoCall(CharSequence title, CharSequence text) {
-            String value = (clean(title) + " " + clean(text)).toLowerCase();
+        static boolean isVideoCall(CharSequence title, CharSequence text) {
+            String value = (clean(title) + " " + clean(text)).toLowerCase(Locale.ROOT);
             return value.contains("视频") || value.contains("視訊") || value.contains("video");
         }
 
         static boolean isVoipNotification(Notification n) {
-            return (n.flags & Notification.FLAG_ONGOING_EVENT) != 0
-                    && WECHAT_VOIP_CHANNEL.equals(channelId(n));
+            Bundle extras = n.extras;
+            CharSequence title = extras == null
+                    ? null : extras.getCharSequence(Notification.EXTRA_TITLE);
+            CharSequence text = extras == null
+                    ? null : extras.getCharSequence(Notification.EXTRA_TEXT);
+            return isVoipNotification(n.flags, channelId(n), title, text);
+        }
+
+        static boolean isVoipNotification(int flags, String channel, CharSequence title,
+                                          CharSequence text) {
+            if ((flags & Notification.FLAG_ONGOING_EVENT) == 0) return false;
+            if (WECHAT_VOIP_CHANNEL.equals(channel)) return true;
+
+            String value = (clean(title) + " " + clean(text)).toLowerCase(Locale.ROOT);
+            boolean chineseCallInProgress = (value.contains("通话") || value.contains("通話"))
+                    && (value.contains("通话中") || value.contains("通話中")
+                    || value.contains("正在") || value.contains("进行中") || value.contains("進行中"));
+            boolean englishCallInProgress = value.contains("call")
+                    && (value.contains("in progress") || value.contains("ongoing")
+                    || value.contains("active"));
+            return chineseCallInProgress || englishCallInProgress;
         }
 
         static ParsedNotification parse(StatusBarNotification sbn) {

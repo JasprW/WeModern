@@ -282,15 +282,13 @@ class MainActivity : ComponentActivity() {
             .setChronometerCountDown(false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setDefaults(Notification.DEFAULT_ALL)
             .setCategory(Notification.CATEGORY_CALL)
             .setColor(0xff33b332.toInt())
+        val notification = CallProgressStyle.build(
+            builder,
+            Icon.createWithResource(this, iconRes),
+        )
         if (Build.VERSION.SDK_INT >= 36) {
-            builder.setStyle(CallProgressStyle.create(Icon.createWithResource(this, iconRes)))
-        }
-        val notification = builder.build()
-        if (Build.VERSION.SDK_INT >= 36) {
-            notification.extras.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
             Log.i(
                 TAG,
                 "test call promotedAllowed=${canPostPromotedNotifications()}, " +
@@ -307,7 +305,6 @@ class MainActivity : ComponentActivity() {
         const val NOTIFICATION_TEST_MESSAGE = 100
         const val NOTIFICATION_TEST_VOICE_CALL = 101
         const val NOTIFICATION_TEST_VIDEO_CALL = 102
-        const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
     }
 }
 
