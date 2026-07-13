@@ -10,6 +10,12 @@
     <string name="section_tests">Tests</string>
     <string name="section_setup">Setup</string>
     <string name="section_advanced">Advanced</string>
+    <string name="app_icon_open_wechat_title">Open WeChat from icon</string>
+    <string name="app_icon_open_wechat_description">Open WeChat when you tap the WeModern app icon</string>
+    <string name="app_icon_open_wechat_locked_description">Finish required notification setup to enable</string>
+    <string name="app_icon_shortcut_tip_title">How to return to settings</string>
+    <string name="app_icon_shortcut_tip_message">Touch and hold the WeModern app icon, then tap the Settings shortcut.</string>
+    <string name="action_got_it">Got it</string>
     <string name="setup_state_running">Running status</string>
     <string name="setup_state_required">Required setup</string>
     <string name="setup_ready_title">All set</string>

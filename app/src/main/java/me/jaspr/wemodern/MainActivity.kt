@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -58,6 +59,7 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Timeline
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -67,10 +69,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -79,6 +83,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,6 +98,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -126,6 +132,10 @@ class MainActivity : ComponentActivity() {
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
                     onOpenAppSettings = { openAppSettings() },
+                    onSetAppIconOpensWeChat = { enabled ->
+                        AppIconBehavior.setOpenWeChatEnabled(this, enabled)
+                        setupState = readSetupState()
+                    },
                     onCopySyncCommands = { copySyncCommands() },
                     onPostMessageTest = { postTestNotification() },
                     onPostVoiceCallTest = { postCallTestNotification(video = false) },
@@ -137,6 +147,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        val launchedFromBubble = AppIconLaunchPolicy.isLaunchedFromBubble(this)
+        val openWeChatEnabled = launchedFromBubble && AppIconBehavior.shouldOpenWeChat(this)
+        if (AppIconLaunchPolicy.shouldForwardFromSettings(
+                launchedFromBubble,
+                openWeChatEnabled,
+            ) && WeChatLauncher.open(this)
+        ) {
+            finish()
+            return
+        }
         setupState = readSetupState()
     }
 
@@ -149,14 +169,24 @@ class MainActivity : ComponentActivity() {
         if (requestCode == REQUEST_POST_NOTIFICATIONS) setupState = readSetupState()
     }
 
-    private fun readSetupState() = SetupState(
-        notificationListenerEnabled = isListenerEnabled(),
-        postNotificationsGranted = hasPostNotificationPermission(),
-        promotedNotificationsAllowed = canPostPromotedNotifications(),
-        batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
-        readLogsGranted = hasReadLogsPermission(),
-        notificationServiceDebugEnabled = isNotificationServiceDebugEnabled(),
-    )
+    private fun readSetupState(): SetupState {
+        val notificationListenerEnabled = isListenerEnabled()
+        val postNotificationsGranted = hasPostNotificationPermission()
+        if ((!notificationListenerEnabled || !postNotificationsGranted) &&
+            AppIconBehavior.isOpenWeChatEnabled(this)
+        ) {
+            AppIconBehavior.setOpenWeChatEnabled(this, false)
+        }
+        return SetupState(
+            notificationListenerEnabled = notificationListenerEnabled,
+            postNotificationsGranted = postNotificationsGranted,
+            appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
+            promotedNotificationsAllowed = canPostPromotedNotifications(),
+            batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
+            readLogsGranted = hasReadLogsPermission(),
+            notificationServiceDebugEnabled = isNotificationServiceDebugEnabled(),
+        )
+    }
 
     private fun isListenerEnabled(): Boolean {
         val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
@@ -309,6 +339,7 @@ class MainActivity : ComponentActivity() {
 private data class SetupState(
     val notificationListenerEnabled: Boolean = false,
     val postNotificationsGranted: Boolean = false,
+    val appIconOpensWeChat: Boolean = false,
     val promotedNotificationsAllowed: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
@@ -355,6 +386,7 @@ private fun WeModernApp(
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onSetAppIconOpensWeChat: (Boolean) -> Unit,
     onCopySyncCommands: () -> Unit,
     onPostMessageTest: () -> Unit,
     onPostVoiceCallTest: () -> Unit,
@@ -367,6 +399,18 @@ private fun WeModernApp(
     val videoSentText = stringResource(R.string.snackbar_test_video_sent)
     val commandsCopiedText = stringResource(R.string.snackbar_sync_commands_copied)
     var syncExpanded by remember { mutableStateOf(false) }
+    var showAppIconShortcutTip by remember { mutableStateOf(false) }
+    val appIconShortcutTipSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val dismissAppIconShortcutTip: () -> Unit = {
+        coroutineScope.launch {
+            appIconShortcutTipSheetState.hide()
+        }.invokeOnCompletion {
+            if (!appIconShortcutTipSheetState.isVisible) {
+                showAppIconShortcutTip = false
+            }
+        }
+        Unit
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -425,6 +469,10 @@ private fun WeModernApp(
                         state = state,
                         expanded = syncExpanded,
                         syncCommands = syncCommands,
+                        onSetAppIconOpensWeChat = { enabled ->
+                            onSetAppIconOpensWeChat(enabled)
+                            if (enabled) showAppIconShortcutTip = true
+                        },
                         onToggleExpanded = { syncExpanded = !syncExpanded },
                         onCopySyncCommands = {
                             onCopySyncCommands()
@@ -450,6 +498,51 @@ private fun WeModernApp(
                             coroutineScope.launch { snackbarHostState.showSnackbar(videoSentText) }
                         },
                     )
+                }
+            }
+        }
+    }
+
+    if (showAppIconShortcutTip) {
+        ModalBottomSheet(
+            onDismissRequest = dismissAppIconShortcutTip,
+            sheetState = appIconShortcutTipSheetState,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(52.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.app_icon_shortcut_tip_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(R.string.app_icon_shortcut_tip_message),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = dismissAppIconShortcutTip,
+                ) {
+                    Text(stringResource(R.string.action_got_it))
                 }
             }
         }
@@ -856,17 +949,94 @@ private fun AdvancedSection(
     state: SetupState,
     expanded: Boolean,
     syncCommands: String,
+    onSetAppIconOpensWeChat: (Boolean) -> Unit,
     onToggleExpanded: () -> Unit,
     onCopySyncCommands: () -> Unit,
 ) {
+    val firstShape = RoundedCornerShape(
+        topStart = 28.dp,
+        topEnd = 28.dp,
+        bottomStart = 12.dp,
+        bottomEnd = 12.dp,
+    )
+    val lastShape = RoundedCornerShape(
+        topStart = 12.dp,
+        topEnd = 12.dp,
+        bottomStart = 28.dp,
+        bottomEnd = 28.dp,
+    )
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(title = stringResource(R.string.section_advanced))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            Column {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = firstShape,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = state.appIconOpensWeChat,
+                            enabled = state.coreReady,
+                            role = Role.Switch,
+                            onValueChange = onSetAppIconOpensWeChat,
+                        )
+                        .semantics(mergeDescendants = true) {}
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        modifier = Modifier.size(48.dp),
+                        shape = RoundedCornerShape(17.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.TouchApp,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.app_icon_open_wechat_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = stringResource(
+                                if (state.coreReady) {
+                                    R.string.app_icon_open_wechat_description
+                                } else {
+                                    R.string.app_icon_open_wechat_locked_description
+                                }
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
+                    }
+                    Switch(
+                        checked = state.appIconOpensWeChat,
+                        enabled = state.coreReady,
+                        onCheckedChange = null,
+                    )
+                }
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = lastShape,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Column {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -992,6 +1162,7 @@ private fun AdvancedSection(
                             )
                         }
                     }
+                }
                 }
             }
         }

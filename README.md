@@ -13,7 +13,7 @@ notifications with the notification features available on modern Android.
 - Keeps rewritten notifications in sync when WeChat removes the originals, with
   optional synchronous removal for the cases Android does not expose normally.
 - Publishes the three most recent conversations as launcher shortcuts. Tapping
-  the app icon opens WeChat, while the final shortcut opens WeModern settings.
+  an optional app-icon action opens WeChat, while the final shortcut opens WeModern settings.
 - Includes a guided Material You setup screen, themed launcher icon, Simplified
   and Traditional Chinese translations, and built-in test notifications.
 
@@ -78,4 +78,4 @@ adb reboot
 
 ## Launcher Behavior
 
-Tapping the WeModern app icon opens WeChat. Touch and hold the icon to open one of the three most recent WeChat conversations or select **Settings**, which is always the final shortcut, to open the WeModern setup screen.
+Tapping the WeModern app icon opens WeModern settings by default. After notification access and notification permission are enabled, **Open WeChat from icon** can be turned on under **Advanced**. Touch and hold the icon to open one of the three most recent WeChat conversations or select **Settings**, which is always the final shortcut, to open the WeModern setup screen.

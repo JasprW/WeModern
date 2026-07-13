@@ -17,6 +17,11 @@ final class WeChatLauncher {
             Log.w(TAG, "WeChat launcher activity cannot be resolved");
             return false;
         }
+        boolean launchedFromBubble = AppIconLaunchPolicy.isLaunchedFromBubble(context);
+        launchIntent.setFlags(AppIconLaunchPolicy.adjustWeChatFlags(
+                launchIntent.getFlags(),
+                launchedFromBubble
+        ));
         context.startActivity(launchIntent);
         return true;
     }

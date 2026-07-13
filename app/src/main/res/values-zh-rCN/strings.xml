@@ -10,6 +10,12 @@
     <string name="section_tests">测试</string>
     <string name="section_setup">设置</string>
     <string name="section_advanced">高级功能</string>
+    <string name="app_icon_open_wechat_title">图标直达微信</string>
+    <string name="app_icon_open_wechat_description">点击 WeModern 图标时直接打开微信</string>
+    <string name="app_icon_open_wechat_locked_description">完成必要的通知设置后可开启</string>
+    <string name="app_icon_shortcut_tip_title">如何返回设置</string>
+    <string name="app_icon_shortcut_tip_message">长按 WeModern 应用图标，然后点击“设置”快捷方式。</string>
+    <string name="action_got_it">知道了</string>
     <string name="setup_state_running">运行状态</string>
     <string name="setup_state_required">必要设置</string>
     <string name="setup_ready_title">已就绪</string>
