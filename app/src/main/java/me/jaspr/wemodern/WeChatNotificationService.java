@@ -230,8 +230,9 @@ public class WeChatNotificationService extends NotificationListenerService {
         CharSequence contentText = parsed.groupConversation
                 ? parsed.sender + ": " + parsed.text
                 : parsed.text;
+        Icon smallIcon = resolveSmallIcon(original);
         Notification.Builder builder = new Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
-                .setSmallIcon(resolveSmallIcon(original))
+                .setSmallIcon(smallIcon)
                 .setContentTitle(parsed.title)
                 .setContentText(contentText)
                 .setStyle(buildMessageStyle(parsed, history, true))
@@ -268,7 +269,8 @@ public class WeChatNotificationService extends NotificationListenerService {
             nm.notify(stableId(parsed.conversationKey), builder.build());
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to post with original icons, falling back", e);
-            builder.setSmallIcon(R.drawable.ic_wechat_scan_24dp);
+            smallIcon = Icon.createWithResource(this, R.drawable.ic_wechat_scan_24dp);
+            builder.setSmallIcon(smallIcon);
             builder.setLargeIcon((Icon) null);
             builder.setStyle(buildMessageStyle(parsed, history, false));
             Log.i(TAG, "post fallback replacement notification"
@@ -278,15 +280,15 @@ public class WeChatNotificationService extends NotificationListenerService {
             nm.notify(stableId(parsed.conversationKey), builder.build());
         }
         if (histories.size() >= 2) {
-            postMessageGroupSummary(contentIntent);
+            postMessageGroupSummary(contentIntent, smallIcon);
         } else {
             nm.cancel(MESSAGE_GROUP_SUMMARY_ID);
         }
     }
 
-    private void postMessageGroupSummary(PendingIntent contentIntent) {
+    private void postMessageGroupSummary(PendingIntent contentIntent, Icon smallIcon) {
         Notification.Builder builder = new Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
-                .setSmallIcon(R.drawable.ic_wechat_scan_24dp)
+                .setSmallIcon(smallIcon)
                 .setContentTitle(getString(R.string.channel_wechat_messages))
                 .setContentText(getString(R.string.app_name))
                 .setGroup(MESSAGE_GROUP_KEY)

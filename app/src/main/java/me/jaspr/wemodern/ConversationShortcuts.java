@@ -1,5 +1,6 @@
 package me.jaspr.wemodern;
 
+import android.app.ActivityOptions;
 import android.app.PendingIntent;
 import android.app.Person;
 import android.content.ComponentName;
@@ -117,7 +118,16 @@ final class ConversationShortcuts {
         PendingIntent contentIntent = CONTENT_INTENTS.get(conversationId);
         if (contentIntent == null) return false;
         try {
-            contentIntent.send();
+            if (Build.VERSION.SDK_INT >= 34) {
+                ActivityOptions options = ActivityOptions.makeBasic();
+                options.setPendingIntentBackgroundActivityStartMode(
+                        Build.VERSION.SDK_INT >= 36
+                                ? ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE
+                                : ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                contentIntent.send(options.toBundle());
+            } else {
+                contentIntent.send();
+            }
             ShortcutManager manager = context.getSystemService(ShortcutManager.class);
             if (manager != null) manager.reportShortcutUsed(conversationId);
             return true;
