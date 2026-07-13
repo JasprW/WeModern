@@ -1,6 +1,39 @@
 # WeModern
 
-An Android notification listener that rewrites WeChat message and call notifications for newer Android versions.
+WeModern is a standalone Android app that rewrites WeChat message and call
+notifications with the notification features available on modern Android.
+
+## Features
+
+- Rebuilds WeChat messages with Android's conversation-style notification UI,
+  including sender avatars, message history, conversation grouping, and direct
+  links back to each chat.
+- Turns ongoing WeChat voice and video calls into Live Updates with elapsed call
+  time on supported Android versions.
+- Keeps rewritten notifications in sync when WeChat removes the originals, with
+  optional synchronous removal for the cases Android does not expose normally.
+- Publishes the three most recent conversations as launcher shortcuts. Tapping
+  the app icon opens WeChat, while the final shortcut opens WeModern settings.
+- Includes a guided Material You setup screen, themed launcher icon, Simplified
+  and Traditional Chinese translations, and built-in test notifications.
+
+## Android 17 Support
+
+Unlike the original Nevolution-based setup, WeModern is a self-contained app
+with no separate Nevolution platform or decorator plug-in required. It supports
+Android 17 (API 37) and handles the modern notification access, sensitive
+notification access, and background `PendingIntent` launch restrictions used by
+recent Android releases. On Android 16 and later, WeChat calls can also appear as
+promoted Live Updates using `Notification.ProgressStyle`.
+
+## Credits
+
+This project is inspired by and based on the approach pioneered by
+[Nevolution](https://github.com/Nevolution/sdk), especially its
+[WeChat Modernized decorator](https://github.com/Nevolution/decorator-wechat).
+Nevolution introduced the idea of upgrading an existing app's notifications
+without requiring changes from that app's developer. Many thanks to Oasis Feng
+and all Nevolution contributors for the original concept and implementation.
 
 ## Build
 
@@ -19,8 +52,8 @@ app/build/outputs/apk/debug/app-debug.apk
 Push a tag named `v*` to build the debug APK and publish it as a GitHub Release:
 
 ```bash
-git tag v0.11
-git push origin v0.11
+git tag v1.0
+git push origin v1.0
 ```
 
 The release workflow attaches `wemodern-<tag>.apk`.
