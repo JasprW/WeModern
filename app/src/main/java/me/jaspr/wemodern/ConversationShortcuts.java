@@ -9,14 +9,15 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
+import android.net.Uri;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.util.Log;
+
+import androidx.core.content.FileProvider;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -226,12 +227,13 @@ final class ConversationShortcuts {
             File directory = iconDirectory(context);
             if (!directory.exists() && !directory.mkdirs()) {
                 Log.w(TAG, "failed to create conversation shortcut icon directory");
-                return fitBitmap(context, bitmap);
+                return null;
             }
-            try (FileOutputStream output = new FileOutputStream(iconFile(context, conversationId))) {
+            File iconFile = iconFile(context, conversationId);
+            try (FileOutputStream output = new FileOutputStream(iconFile)) {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
             }
-            return fitBitmap(context, bitmap);
+            return iconForFile(context, iconFile);
         } catch (IOException | RuntimeException e) {
             Log.w(TAG, "failed to persist conversation shortcut icon", e);
             return null;
@@ -239,14 +241,14 @@ final class ConversationShortcuts {
     }
 
     private static Icon loadIcon(Context context, String conversationId) {
-        Bitmap bitmap = BitmapFactory.decodeFile(iconFile(context, conversationId).getPath());
-        return bitmap == null ? null : fitBitmap(context, bitmap);
+        File iconFile = iconFile(context, conversationId);
+        return iconFile.isFile() ? iconForFile(context, iconFile) : null;
     }
 
-    private static Icon fitBitmap(Context context, Bitmap bitmap) {
-        Bitmap fitted = renderDrawable(
-                new BitmapDrawable(context.getResources(), bitmap), ADAPTIVE_ICON_INSET_PX);
-        return fitted == null ? null : Icon.createWithAdaptiveBitmap(fitted);
+    private static Icon iconForFile(Context context, File iconFile) {
+        Uri iconUri = FileProvider.getUriForFile(
+                context, context.getPackageName() + ".shortcuticons", iconFile);
+        return Icon.createWithAdaptiveBitmapContentUri(iconUri);
     }
 
     private static Bitmap renderDrawable(Drawable drawable, int inset) {

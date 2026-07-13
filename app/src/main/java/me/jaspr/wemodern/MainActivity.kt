@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -20,23 +21,30 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
@@ -100,9 +108,14 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -114,10 +127,11 @@ class MainActivity : ComponentActivity() {
         NotificationChannels.ensure(this)
         ConversationShortcuts.ensureSettingsShortcut(this)
         getSystemService(NotificationManager::class.java).apply {
-            cancel(NOTIFICATION_TEST_MESSAGE)
+            cancel(MessageTestNotifications.CURRENT_ID)
             cancel(CallTestNotifications.CURRENT_ID)
             cancel(CallTestNotifications.LEGACY_VIDEO_ID)
         }
+        MessageTestNotifications.removeConversationShortcut(this)
         setupState = readSetupState()
 
         setContent {
@@ -289,14 +303,66 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun postTestNotification() {
-        val notification = Notification.Builder(this, NotificationChannels.STATUS)
-            .setSmallIcon(R.drawable.ic_wechat_scan_24dp)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.test_notification_text))
+        val now = System.currentTimeMillis()
+        val senderAvatar = Icon.createWithResource(this, R.drawable.ic_test_message_avatar_48)
+        val sender = android.app.Person.Builder()
+            .setName(getString(R.string.test_message_sender))
+            .setIcon(senderAvatar)
+            .build()
+        val me = android.app.Person.Builder()
+            .setName(getString(R.string.app_name))
+            .build()
+        val style = Notification.MessagingStyle(me)
+            .setConversationTitle(getString(R.string.test_message_sender))
+            .addMessage(
+                Notification.MessagingStyle.Message(
+                    getString(R.string.test_message_short),
+                    now - TEST_MESSAGE_SHORT_AGE_MS,
+                    sender,
+                )
+            )
+            .addMessage(
+                Notification.MessagingStyle.Message(
+                    getString(R.string.test_message_long),
+                    now,
+                    sender,
+                )
+            )
+        val smallIcon = WeChatNotificationService.lastCapturedWeChatSmallIcon()
+            ?: Icon.createWithResource(this, R.drawable.ic_wechat_notification_fallback)
+        MessageTestNotifications.removeConversationShortcut(this)
+        MessageTestNotifications.publishConversationShortcut(
+            this,
+            getString(R.string.test_message_sender),
+            senderAvatar,
+        )
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            MessageTestNotifications.CURRENT_ID,
+            Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
+            .setSmallIcon(smallIcon)
+            .setLargeIcon(senderAvatar)
+            .setContentTitle(getString(R.string.test_message_sender))
+            .setContentText(getString(R.string.test_message_long))
+            .setStyle(style)
+            .setWhen(now)
+            .setShowWhen(true)
             .setDefaults(Notification.DEFAULT_ALL)
             .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_MESSAGE)
+            .setColor(0xff33b332.toInt())
+            .setContentIntent(contentIntent)
+            .setShortcutId(MessageTestNotifications.SHORTCUT_ID)
             .build()
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_TEST_MESSAGE, notification)
+        getSystemService(NotificationManager::class.java)
+            .notify(MessageTestNotifications.CURRENT_ID, notification)
+        MessageTestNotifications.removeDynamicConversationShortcut(this)
     }
 
     private fun postCallTestNotification(video: Boolean) {
@@ -332,7 +398,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val TAG = "WeModern"
         const val REQUEST_POST_NOTIFICATIONS = 100
-        const val NOTIFICATION_TEST_MESSAGE = 100
+        const val TEST_MESSAGE_SHORT_AGE_MS = 90_000L
     }
 }
 
@@ -419,7 +485,9 @@ private fun WeModernApp(
                 title = {
                     Text(
                         text = stringResource(R.string.app_name),
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontFamily = GoogleSansFlexDisplay,
+                        fontWeight = FontWeight.Normal,
                     )
                 },
                 actions = {
@@ -621,7 +689,8 @@ private fun SetupHero(
                             )
                         },
                         style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = GoogleSansFlexDisplay,
+                        fontWeight = FontWeight.Normal,
                     )
                 }
             }
@@ -932,7 +1001,8 @@ private fun SectionHeader(title: String, supporting: String? = null) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
+            fontFamily = GoogleSansFlexDisplay,
+            fontWeight = FontWeight.Normal,
         )
         if (supporting != null) {
             Text(
@@ -1201,6 +1271,14 @@ private fun TestsSection(
     onPostVoiceCallTest: () -> Unit,
     onPostVideoCallTest: () -> Unit,
 ) {
+    val messageInteraction = remember { MutableInteractionSource() }
+    val voiceInteraction = remember { MutableInteractionSource() }
+    val videoInteraction = remember { MutableInteractionSource() }
+    val messagePressed by messageInteraction.collectIsPressedAsState()
+    val voicePressed by voiceInteraction.collectIsPressedAsState()
+    val videoPressed by videoInteraction.collectIsPressedAsState()
+    val anyPressed = messagePressed || voicePressed || videoPressed
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(
             title = stringResource(R.string.section_tests),
@@ -1208,39 +1286,54 @@ private fun TestsSection(
                 if (enabled) R.string.tests_support_ready else R.string.tests_support_locked
             ),
         )
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier.padding(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                TestActionButton(
-                    modifier = Modifier.weight(1f),
-                    text = stringResource(R.string.test_short_message),
-                    icon = Icons.Rounded.Notifications,
-                    enabled = enabled,
-                    onClick = onPostMessageTest,
-                )
-                TestActionButton(
-                    modifier = Modifier.weight(1f),
-                    text = stringResource(R.string.test_short_voice),
-                    icon = Icons.Rounded.PhoneInTalk,
-                    enabled = enabled,
-                    onClick = onPostVoiceCallTest,
-                )
-                TestActionButton(
-                    modifier = Modifier.weight(1f),
-                    text = stringResource(R.string.test_short_video),
-                    icon = Icons.Rounded.Videocam,
-                    enabled = enabled,
-                    onClick = onPostVideoCallTest,
-                )
-            }
+            TestActionButton(
+                modifier = Modifier.weight(testButtonGroupWeight(messagePressed, anyPressed)),
+                text = stringResource(R.string.test_short_message),
+                icon = Icons.Rounded.Notifications,
+                enabled = enabled,
+                interactionSource = messageInteraction,
+                onClick = onPostMessageTest,
+            )
+            TestActionButton(
+                modifier = Modifier.weight(testButtonGroupWeight(voicePressed, anyPressed)),
+                text = stringResource(R.string.test_short_voice),
+                icon = Icons.Rounded.PhoneInTalk,
+                enabled = enabled,
+                interactionSource = voiceInteraction,
+                onClick = onPostVoiceCallTest,
+            )
+            TestActionButton(
+                modifier = Modifier.weight(testButtonGroupWeight(videoPressed, anyPressed)),
+                text = stringResource(R.string.test_short_video),
+                icon = Icons.Rounded.Videocam,
+                enabled = enabled,
+                interactionSource = videoInteraction,
+                onClick = onPostVideoCallTest,
+            )
         }
     }
+}
+
+@Composable
+private fun testButtonGroupWeight(pressed: Boolean, anyPressed: Boolean): Float {
+    return animateFloatAsState(
+        targetValue = when {
+            pressed -> 1.16f
+            anyPressed -> 0.92f
+            else -> 1f
+        },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "testButtonGroupWeight",
+    ).value
 }
 
 @Composable
@@ -1249,12 +1342,14 @@ private fun TestActionButton(
     text: String,
     icon: ImageVector,
     enabled: Boolean,
+    interactionSource: MutableInteractionSource,
     onClick: () -> Unit,
 ) {
     FilledTonalButton(
-        modifier = modifier.heightIn(min = 56.dp),
+        modifier = modifier.fillMaxHeight(),
         enabled = enabled,
         onClick = onClick,
+        interactionSource = interactionSource,
         shape = CircleShape,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
         colors = ButtonDefaults.filledTonalButtonColors(
@@ -1287,10 +1382,55 @@ private fun WeModernTheme(content: @Composable () -> Unit) {
     }
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography(),
+        typography = WeModernTypography,
         content = content,
     )
 }
+
+@OptIn(ExperimentalTextApi::class)
+private val GoogleSansFlexRounded = FontFamily(
+    Font(
+        R.font.google_sans_flex_variable,
+        variationSettings = FontVariation.Settings(
+            FontVariation.Setting("ROND", 100f),
+        ),
+    ),
+)
+
+@OptIn(ExperimentalTextApi::class)
+private val GoogleSansFlexDisplay = FontFamily(
+    Font(
+        R.font.google_sans_flex_variable,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(760),
+            FontVariation.width(112f),
+            FontVariation.opticalSizing(32.sp),
+            FontVariation.Setting("ROND", 100f),
+        ),
+    ),
+)
+
+private val DefaultWeModernTypography = Typography()
+
+private val WeModernTypography = Typography(
+    displayLarge = DefaultWeModernTypography.displayLarge.roundedGoogleSansFlex(),
+    displayMedium = DefaultWeModernTypography.displayMedium.roundedGoogleSansFlex(),
+    displaySmall = DefaultWeModernTypography.displaySmall.roundedGoogleSansFlex(),
+    headlineLarge = DefaultWeModernTypography.headlineLarge.roundedGoogleSansFlex(),
+    headlineMedium = DefaultWeModernTypography.headlineMedium.roundedGoogleSansFlex(),
+    headlineSmall = DefaultWeModernTypography.headlineSmall.roundedGoogleSansFlex(),
+    titleLarge = DefaultWeModernTypography.titleLarge.roundedGoogleSansFlex(),
+    titleMedium = DefaultWeModernTypography.titleMedium.roundedGoogleSansFlex(),
+    titleSmall = DefaultWeModernTypography.titleSmall.roundedGoogleSansFlex(),
+    bodyLarge = DefaultWeModernTypography.bodyLarge.roundedGoogleSansFlex(),
+    bodyMedium = DefaultWeModernTypography.bodyMedium.roundedGoogleSansFlex(),
+    bodySmall = DefaultWeModernTypography.bodySmall.roundedGoogleSansFlex(),
+    labelLarge = DefaultWeModernTypography.labelLarge.roundedGoogleSansFlex(),
+    labelMedium = DefaultWeModernTypography.labelMedium.roundedGoogleSansFlex(),
+    labelSmall = DefaultWeModernTypography.labelSmall.roundedGoogleSansFlex(),
+)
+
+private fun TextStyle.roundedGoogleSansFlex() = copy(fontFamily = GoogleSansFlexRounded)
 
 private val LightColorScheme = lightColorScheme(
     primary = Color(0xFF006C48),

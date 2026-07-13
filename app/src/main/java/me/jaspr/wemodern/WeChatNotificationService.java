@@ -36,6 +36,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final long ORIGINAL_SNOOZE_DURATION_MS = 24L * 60L * 60L * 1000L;
     private static final int MAX_HISTORY = 8;
     private static final int MESSAGE_GROUP_SUMMARY_ID = 0x5747534d;
+    private static volatile Icon lastWeChatSmallIcon;
     private final Map<String, ArrayDeque<Message>> histories = new HashMap<>();
     private final Map<String, String> originalToConversation = new HashMap<>();
     private final Map<CancelEventKey, ReplacementRecord> replacementsByCancelEvent = new HashMap<>();
@@ -177,6 +178,8 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private void handleWeChatNotification(StatusBarNotification sbn, boolean fromActiveScan) {
         Notification original = sbn.getNotification();
+        Icon originalSmallIcon = original.getSmallIcon();
+        if (originalSmallIcon != null) lastWeChatSmallIcon = originalSmallIcon;
         ParsedVoipNotification voip = WeChatParser.parseVoip(this, sbn);
         if (voip != null) {
             int replacementId = voipReplacementId(sbn);
@@ -267,7 +270,7 @@ public class WeChatNotificationService extends NotificationListenerService {
             nm.notify(stableId(parsed.conversationKey), builder.build());
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to post with original icons, falling back", e);
-            smallIcon = Icon.createWithResource(this, R.drawable.ic_wechat_scan_24dp);
+            smallIcon = Icon.createWithResource(this, R.drawable.ic_wechat_notification_fallback);
             builder.setSmallIcon(smallIcon);
             builder.setLargeIcon((Icon) null);
             builder.setStyle(buildMessageStyle(parsed, history, false));
@@ -376,8 +379,8 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (isMessageGroupSummary(sbn.getNotification())) {
             return;
         }
-        if (isCallTestNotification(sbn)) {
-            Log.d(TAG, "keep test call notification"
+        if (isTestNotificationId(sbn.getId())) {
+            Log.d(TAG, "keep test notification"
                     + ", id=" + sbn.getId()
                     + ", channel=" + channel
                     + ", key=" + sbn.getKey());
@@ -397,8 +400,8 @@ public class WeChatNotificationService extends NotificationListenerService {
                 + ", key=" + sbn.getKey());
     }
 
-    private boolean isCallTestNotification(StatusBarNotification sbn) {
-        return CallTestNotifications.isTestId(sbn.getId());
+    static boolean isTestNotificationId(int id) {
+        return MessageTestNotifications.isTestId(id) || CallTestNotifications.isTestId(id);
     }
 
     private static boolean isMessageGroupSummary(Notification notification) {
@@ -527,7 +530,11 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static Icon resolveSmallIcon(Notification original) {
         Icon icon = original.getSmallIcon();
         if (icon != null) return icon;
-        return Icon.createWithResource("me.jaspr.wemodern", R.drawable.ic_wechat_scan_24dp);
+        return Icon.createWithResource("me.jaspr.wemodern", R.drawable.ic_wechat_notification_fallback);
+    }
+
+    static Icon lastCapturedWeChatSmallIcon() {
+        return lastWeChatSmallIcon;
     }
 
     private static Icon resolveSenderIcon(Notification original) {
