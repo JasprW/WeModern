@@ -109,8 +109,8 @@ class MainActivity : ComponentActivity() {
         ConversationShortcuts.ensureSettingsShortcut(this)
         getSystemService(NotificationManager::class.java).apply {
             cancel(NOTIFICATION_TEST_MESSAGE)
-            cancel(NOTIFICATION_TEST_VOICE_CALL)
-            cancel(NOTIFICATION_TEST_VIDEO_CALL)
+            cancel(CallTestNotifications.CURRENT_ID)
+            cancel(CallTestNotifications.LEGACY_VIDEO_ID)
         }
         setupState = readSetupState()
 
@@ -296,15 +296,13 @@ class MainActivity : ComponentActivity() {
             )
         }
         getSystemService(NotificationManager::class.java)
-            .notify(if (video) NOTIFICATION_TEST_VIDEO_CALL else NOTIFICATION_TEST_VOICE_CALL, notification)
+            .notify(CallTestNotifications.idFor(video), notification)
     }
 
     private companion object {
         const val TAG = "WeModern"
         const val REQUEST_POST_NOTIFICATIONS = 100
         const val NOTIFICATION_TEST_MESSAGE = 100
-        const val NOTIFICATION_TEST_VOICE_CALL = 101
-        const val NOTIFICATION_TEST_VIDEO_CALL = 102
     }
 }
 

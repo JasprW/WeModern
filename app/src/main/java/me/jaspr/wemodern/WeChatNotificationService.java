@@ -35,8 +35,6 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final String STORAGE_SEPARATOR = "\u001f";
     private static final long ORIGINAL_SNOOZE_DURATION_MS = 24L * 60L * 60L * 1000L;
     private static final int MAX_HISTORY = 8;
-    private static final int TEST_VOICE_CALL_NOTIFICATION_ID = 101;
-    private static final int TEST_VIDEO_CALL_NOTIFICATION_ID = 102;
     private static final int MESSAGE_GROUP_SUMMARY_ID = 0x5747534d;
     private final Map<String, ArrayDeque<Message>> histories = new HashMap<>();
     private final Map<String, String> originalToConversation = new HashMap<>();
@@ -400,8 +398,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private boolean isCallTestNotification(StatusBarNotification sbn) {
-        int id = sbn.getId();
-        return id == TEST_VOICE_CALL_NOTIFICATION_ID || id == TEST_VIDEO_CALL_NOTIFICATION_ID;
+        return CallTestNotifications.isTestId(sbn.getId());
     }
 
     private static boolean isMessageGroupSummary(Notification notification) {

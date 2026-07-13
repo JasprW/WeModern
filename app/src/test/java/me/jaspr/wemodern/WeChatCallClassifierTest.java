@@ -1,5 +1,6 @@
 package me.jaspr.wemodern;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -61,5 +62,12 @@ public class WeChatCallClassifierTest {
                 Notification.FLAG_NO_CLEAR));
         assertFalse(WeChatNotificationService.shouldSnoozeOriginal(
                 Notification.FLAG_AUTO_CANCEL));
+    }
+
+    @Test
+    public void voiceAndVideoTestsReplaceTheSameNotification() {
+        assertEquals(CallTestNotifications.idFor(false), CallTestNotifications.idFor(true));
+        assertTrue(CallTestNotifications.isTestId(CallTestNotifications.idFor(false)));
+        assertTrue(CallTestNotifications.isTestId(CallTestNotifications.LEGACY_VIDEO_ID));
     }
 }
