@@ -22,7 +22,7 @@
     <string name="bubble_open_wechat_home">在气泡内打开微信</string>
     <string name="bubble_no_messages">暂无最近消息</string>
     <string name="bubble_trampoline_title">气泡跳板（实验功能）</string>
-    <string name="bubble_trampoline_description">从测试消息气泡内打开微信主页</string>
+    <string name="bubble_trampoline_description">在对应气泡内打开微信会话</string>
     <string name="bubble_trampoline_locked_description">完成必要的通知设置后可开启</string>
     <string name="bubble_trampoline_bubbles_required_description">开启聊天气泡后可设置</string>
     <string name="app_icon_shortcut_tip_title">如何返回设置</string>

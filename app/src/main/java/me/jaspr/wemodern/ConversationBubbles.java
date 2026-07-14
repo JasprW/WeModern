@@ -8,8 +8,10 @@ import android.content.Intent;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Log;
 
 final class ConversationBubbles {
+    private static final String TAG = "WeModern";
     private static final int MIN_BUBBLE_SDK = 29;
     private static final int REQUEST_CODE_NAMESPACE = 0x42000000;
 
@@ -26,8 +28,8 @@ final class ConversationBubbles {
     }
 
     static int pendingIntentFlags() {
-        // SystemUI needs to fill launch options into a bubble PendingIntent. Android 17
-        // rejects immutable intents here, so keep this explicit Activity intent mutable.
+        // Android 12+ requires the Activity PendingIntent attached to BubbleMetadata to be
+        // mutable so SystemUI can supply its embedded-task launch options.
         return PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE;
     }
 
@@ -60,12 +62,7 @@ final class ConversationBubbles {
                             .appendPath(state.conversationId)
                             .build());
             state.writeTo(target);
-            PendingIntent bubbleIntent = PendingIntent.getActivity(
-                    context,
-                    requestCodeFor(state.conversationId),
-                    target,
-                    pendingIntentFlags()
-            );
+            PendingIntent bubbleIntent = createBubbleIntent(context, state, target);
             Notification.BubbleMetadata.Builder metadataBuilder;
             if (Build.VERSION.SDK_INT >= 30) {
                 metadataBuilder = Api30Impl.newBuilder(bubbleIntent, icon);
@@ -81,6 +78,42 @@ final class ConversationBubbles {
                     .setSuppressNotification(false)
                     .build();
             builder.setBubbleMetadata(metadata);
+        }
+
+        private static PendingIntent createBubbleIntent(
+                Context context,
+                ConversationBubbleState state,
+                Intent fallbackTarget
+        ) {
+            boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
+            if (trampolineEnabled
+                    && MessageTestNotifications.isTestShortcutId(state.conversationId)) {
+                Intent weChatTarget = WeChatLauncher.createBubbleRootIntent(context);
+                if (weChatTarget != null) {
+                    Log.i(TAG, "using mutable WeChat bubble root"
+                            + ", conversation=" + state.conversationId
+                            + ", component=" + weChatTarget.getComponent());
+                    return PendingIntent.getActivity(
+                            context,
+                            requestCodeFor(state.conversationId),
+                            weChatTarget,
+                            pendingIntentFlags()
+                    );
+                }
+            }
+            if (trampolineEnabled) {
+                // WeChat's notification PendingIntent is immutable, but BubbleMetadata requires
+                // a mutable Activity PendingIntent. The WeModern activity therefore remains the
+                // standards-compliant bridge and sends the untouched WeChat intent on expansion.
+                Log.i(TAG, "using Activity trampoline"
+                        + ", conversation=" + state.conversationId);
+            }
+            return PendingIntent.getActivity(
+                    context,
+                    requestCodeFor(state.conversationId),
+                    fallbackTarget,
+                    pendingIntentFlags()
+            );
         }
     }
 

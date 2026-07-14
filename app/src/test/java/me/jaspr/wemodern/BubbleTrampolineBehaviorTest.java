@@ -23,8 +23,26 @@ public class BubbleTrampolineBehaviorTest {
     }
 
     @Test
-    public void realConversationNeverUsesTestTrampoline() {
+    public void realConversationDoesNotUseHomeTrampoline() {
         assertFalse(BubbleTrampolineBehavior.shouldOpenWeChatHome("wechat_alice", true));
         assertFalse(BubbleTrampolineBehavior.shouldOpenWeChatHome(null, true));
+    }
+
+    @Test
+    public void enabledRealConversationUsesConversationTrampoline() {
+        assertTrue(BubbleTrampolineBehavior.shouldOpenWeChatConversation(
+                "wechat_alice",
+                true
+        ));
+    }
+
+    @Test
+    public void testAndDisabledConversationsDoNotUseConversationTrampoline() {
+        assertFalse(BubbleTrampolineBehavior.shouldOpenWeChatConversation(
+                MessageTestNotifications.SHORTCUT_ID,
+                true
+        ));
+        assertFalse(BubbleTrampolineBehavior.shouldOpenWeChatConversation("wechat_alice", false));
+        assertFalse(BubbleTrampolineBehavior.shouldOpenWeChatConversation(null, true));
     }
 }

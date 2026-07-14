@@ -6,17 +6,26 @@ import android.content.Intent;
 import android.os.Build;
 
 final class AppIconLaunchPolicy {
+    private static final String WECHAT_PACKAGE = "com.tencent.mm";
+
     private AppIconLaunchPolicy() {
     }
 
-    static int adjustWeChatFlags(int originalFlags, boolean launchedFromBubble) {
-        if (!launchedFromBubble) return originalFlags;
-        int taskSeparatingFlags = Intent.FLAG_ACTIVITY_NEW_TASK
+    static int taskSeparatingFlags() {
+        return Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
                 | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
                 | Intent.FLAG_ACTIVITY_CLEAR_TASK
                 | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED;
-        return originalFlags & ~taskSeparatingFlags;
+    }
+
+    static int adjustWeChatFlags(int originalFlags, boolean launchedFromBubble) {
+        if (!launchedFromBubble) return originalFlags;
+        return originalFlags & ~taskSeparatingFlags();
+    }
+
+    static boolean canLaunchWeChatActivityIntent(String creatorPackage, boolean isActivity) {
+        return isActivity && WECHAT_PACKAGE.equals(creatorPackage);
     }
 
     static int adjustSettingsFlags(int originalFlags, boolean launchedFromBubble) {

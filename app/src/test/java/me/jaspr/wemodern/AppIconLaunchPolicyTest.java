@@ -32,6 +32,14 @@ public class AppIconLaunchPolicyTest {
     }
 
     @Test
+    public void onlyWeChatActivityPendingIntentsCanUseBubbleTrampoline() {
+        assertTrue(AppIconLaunchPolicy.canLaunchWeChatActivityIntent("com.tencent.mm", true));
+        assertFalse(AppIconLaunchPolicy.canLaunchWeChatActivityIntent("com.tencent.mm", false));
+        assertFalse(AppIconLaunchPolicy.canLaunchWeChatActivityIntent("example.app", true));
+        assertFalse(AppIconLaunchPolicy.canLaunchWeChatActivityIntent(null, true));
+    }
+
+    @Test
     public void regularSettingsLaunchUsesSeparateTask() {
         int original = Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP;
 
