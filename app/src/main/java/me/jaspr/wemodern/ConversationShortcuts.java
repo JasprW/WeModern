@@ -11,8 +11,10 @@ import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.net.Uri;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.util.Log;
@@ -39,6 +41,7 @@ final class ConversationShortcuts {
     private static final String STORE = "conversation_shortcuts";
     private static final String KEY_RECENT = "recent";
     private static final String ICON_DIRECTORY = "conversation_shortcut_icons";
+    private static final String ICON_FORMAT_MARKER = ".adaptive_safe_zone_v2";
     private static final String SETTINGS_SHORTCUT_ID = "wemodern_settings";
     private static final int MAX_RECENT = 3;
     private static final int SHORTCUT_ICON_SIZE_PX = 192;
@@ -56,6 +59,7 @@ final class ConversationShortcuts {
             return;
         }
         registerContentIntent(conversationId, contentIntent);
+        migrateLegacyShortcutIcons(context);
 
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
         if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
@@ -78,6 +82,7 @@ final class ConversationShortcuts {
     }
 
     static void ensureSettingsShortcut(Context context) {
+        migrateLegacyShortcutIcons(context);
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
         if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
         try {
@@ -101,7 +106,7 @@ final class ConversationShortcuts {
         if (source == null) return null;
         try {
             Drawable drawable = source.loadDrawable(context);
-            Bitmap bitmap = renderDrawable(drawable, ADAPTIVE_ICON_INSET_PX);
+            Bitmap bitmap = renderAdaptiveIconDrawable(drawable);
             return bitmap == null ? source : Icon.createWithAdaptiveBitmap(bitmap);
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to fit conversation avatar", e);
@@ -110,6 +115,7 @@ final class ConversationShortcuts {
     }
 
     static void refreshIcons(Context context) {
+        migrateLegacyShortcutIcons(context);
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
         if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
         replaceDynamicShortcuts(context, manager, load(context), null, null);
@@ -221,7 +227,7 @@ final class ConversationShortcuts {
         try {
             Drawable drawable = source.loadDrawable(context);
             if (drawable == null) return null;
-            Bitmap bitmap = renderDrawable(drawable, 0);
+            Bitmap bitmap = renderAdaptiveIconDrawable(drawable);
             if (bitmap == null) return null;
 
             File directory = iconDirectory(context);
@@ -230,9 +236,7 @@ final class ConversationShortcuts {
                 return null;
             }
             File iconFile = iconFile(context, conversationId);
-            try (FileOutputStream output = new FileOutputStream(iconFile)) {
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
-            }
+            writeBitmap(iconFile, bitmap);
             return iconForFile(context, iconFile);
         } catch (IOException | RuntimeException e) {
             Log.w(TAG, "failed to persist conversation shortcut icon", e);
@@ -251,21 +255,71 @@ final class ConversationShortcuts {
         return Icon.createWithAdaptiveBitmapContentUri(iconUri);
     }
 
-    private static Bitmap renderDrawable(Drawable drawable, int inset) {
+    static int[] adaptiveIconBounds(int size) {
+        int inset = Math.round(size * ADAPTIVE_ICON_INSET_PX / (float) SHORTCUT_ICON_SIZE_PX);
+        return new int[] {inset, inset, size - inset, size - inset};
+    }
+
+    private static Bitmap renderAdaptiveIconDrawable(Drawable drawable) {
         if (drawable == null) return null;
         Bitmap bitmap = Bitmap.createBitmap(
                 SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
-        drawable.setBounds(inset, inset,
-                SHORTCUT_ICON_SIZE_PX - inset, SHORTCUT_ICON_SIZE_PX - inset);
+        int[] bounds = adaptiveIconBounds(SHORTCUT_ICON_SIZE_PX);
+        drawable.setBounds(bounds[0], bounds[1], bounds[2], bounds[3]);
         drawable.draw(canvas);
         return bitmap;
+    }
+
+    private static void migrateLegacyShortcutIcons(Context context) {
+        File directory = iconDirectory(context);
+        File marker = new File(directory, ICON_FORMAT_MARKER);
+        if (marker.isFile()) return;
+        if (!directory.exists() && !directory.mkdirs()) {
+            Log.w(TAG, "failed to create conversation shortcut icon directory for migration");
+            return;
+        }
+        File[] files = directory.listFiles(file -> file.getName().endsWith(".png"));
+        if (files == null) return;
+        for (File file : files) {
+            Bitmap source = BitmapFactory.decodeFile(file.getPath());
+            if (source == null) {
+                Log.w(TAG, "failed to decode conversation shortcut icon: " + file.getName());
+                return;
+            }
+            Bitmap fitted = renderAdaptiveIconDrawable(
+                    new BitmapDrawable(context.getResources(), source));
+            if (fitted == null) {
+                Log.w(TAG, "failed to migrate conversation shortcut icon: " + file.getName());
+                return;
+            }
+            try {
+                writeBitmap(file, fitted);
+            } catch (IOException e) {
+                Log.w(TAG, "failed to migrate conversation shortcut icon: " + file.getName(), e);
+                return;
+            }
+        }
+        try {
+            if (!marker.createNewFile()) {
+                Log.w(TAG, "failed to mark conversation shortcut icon migration");
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "failed to mark conversation shortcut icon migration", e);
+        }
+    }
+
+    private static void writeBitmap(File file, Bitmap bitmap) throws IOException {
+        try (FileOutputStream output = new FileOutputStream(file)) {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
+        }
     }
 
     private static void deleteStaleIcons(Context context, List<Entry> recent) {
         File[] files = iconDirectory(context).listFiles();
         if (files == null) return;
         for (File file : files) {
+            if (ICON_FORMAT_MARKER.equals(file.getName())) continue;
             boolean keep = false;
             for (Entry entry : recent) {
                 if (file.equals(iconFile(context, entry.id))) {
