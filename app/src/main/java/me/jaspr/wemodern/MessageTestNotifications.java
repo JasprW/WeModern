@@ -34,7 +34,7 @@ final class MessageTestNotifications {
         Intent intent = new Intent(context, MainActivity.class)
                 .setAction(Intent.ACTION_VIEW)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        ShortcutInfo shortcut = new ShortcutInfo.Builder(context, SHORTCUT_ID)
+        ShortcutInfo.Builder builder = new ShortcutInfo.Builder(context, SHORTCUT_ID)
                 .setActivity(new ComponentName(context, LauncherActivity.class))
                 .setShortLabel(senderName)
                 .setLongLabel(senderName)
@@ -47,9 +47,10 @@ final class MessageTestNotifications {
                         .setIcon(avatar)
                         .build())
                 .setLongLived(true)
-                .setCategories(Collections.singleton(ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION))
-                .build();
-        manager.pushDynamicShortcut(shortcut);
+                .setCategories(Collections.singleton(ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION));
+        // A bubble's conversation shortcut must remain available to SystemUI. Android 17
+        // does not treat a test shortcut excluded from every launcher surface as valid.
+        manager.pushDynamicShortcut(builder.build());
     }
 
     static void removeDynamicConversationShortcut(Context context) {

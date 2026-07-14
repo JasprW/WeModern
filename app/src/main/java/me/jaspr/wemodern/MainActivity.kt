@@ -29,6 +29,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +48,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +57,7 @@ import androidx.compose.material.icons.rounded.BatterySaver
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -132,6 +135,7 @@ class MainActivity : ComponentActivity() {
             cancel(CallTestNotifications.LEGACY_VIDEO_ID)
         }
         MessageTestNotifications.removeConversationShortcut(this)
+        ConversationBubbleStore.remove(MessageTestNotifications.SHORTCUT_ID)
         setupState = readSetupState()
 
         setContent {
@@ -143,6 +147,7 @@ class MainActivity : ComponentActivity() {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
                     onRequestNotifications = { requestPostNotifications() },
+                    onOpenChatBubbleSettings = { openChatBubbleSettings() },
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
                     onOpenAppSettings = { openAppSettings() },
@@ -195,6 +200,7 @@ class MainActivity : ComponentActivity() {
             notificationListenerEnabled = notificationListenerEnabled,
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
+            chatBubblesAllowed = areChatBubblesAllowed(),
             promotedNotificationsAllowed = canPostPromotedNotifications(),
             batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
             readLogsGranted = hasReadLogsPermission(),
@@ -215,6 +221,18 @@ class MainActivity : ComponentActivity() {
 
     private fun canPostPromotedNotifications(): Boolean {
         return Build.VERSION.SDK_INT >= 36 && getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun areChatBubblesAllowed(): Boolean {
+        if (Build.VERSION.SDK_INT < 29) return false
+        val manager = getSystemService(NotificationManager::class.java)
+        return if (Build.VERSION.SDK_INT >= 31) {
+            manager.areBubblesEnabled() &&
+                    manager.bubblePreference != NotificationManager.BUBBLE_PREFERENCE_NONE
+        } else {
+            manager.areBubblesAllowed()
+        }
     }
 
     private fun isBatteryOptimizationIgnored(): Boolean {
@@ -289,6 +307,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openChatBubbleSettings() {
+        if (Build.VERSION.SDK_INT < 29) return
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_BUBBLE_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            )
+        }.onFailure {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            }.onFailure {
+                openAppSettings()
+            }
+        }
+    }
+
     private fun openAppSettings() {
         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.parse("package:$packageName")
@@ -305,29 +342,45 @@ class MainActivity : ComponentActivity() {
     private fun postTestNotification() {
         val now = System.currentTimeMillis()
         val senderAvatar = Icon.createWithResource(this, R.drawable.ic_test_message_avatar_48)
-        val sender = android.app.Person.Builder()
-            .setName(getString(R.string.test_message_sender))
-            .setIcon(senderAvatar)
-            .build()
-        val me = android.app.Person.Builder()
-            .setName(getString(R.string.app_name))
-            .build()
-        val style = Notification.MessagingStyle(me)
-            .setConversationTitle(getString(R.string.test_message_sender))
-            .addMessage(
-                Notification.MessagingStyle.Message(
+        val style = if (Build.VERSION.SDK_INT >= 28) {
+            val sender = android.app.Person.Builder()
+                .setName(getString(R.string.test_message_sender))
+                .setIcon(senderAvatar)
+                .build()
+            val me = android.app.Person.Builder()
+                .setName(getString(R.string.app_name))
+                .build()
+            Notification.MessagingStyle(me)
+                .setConversationTitle(getString(R.string.test_message_sender))
+                .addMessage(
+                    Notification.MessagingStyle.Message(
+                        getString(R.string.test_message_short),
+                        now - TEST_MESSAGE_SHORT_AGE_MS,
+                        sender,
+                    )
+                )
+                .addMessage(
+                    Notification.MessagingStyle.Message(
+                        getString(R.string.test_message_long),
+                        now,
+                        sender,
+                    )
+                )
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.MessagingStyle(getString(R.string.app_name))
+                .setConversationTitle(getString(R.string.test_message_sender))
+                .addMessage(
                     getString(R.string.test_message_short),
                     now - TEST_MESSAGE_SHORT_AGE_MS,
-                    sender,
+                    getString(R.string.test_message_sender),
                 )
-            )
-            .addMessage(
-                Notification.MessagingStyle.Message(
+                .addMessage(
                     getString(R.string.test_message_long),
                     now,
-                    sender,
+                    getString(R.string.test_message_sender),
                 )
-            )
+        }
         val smallIcon = WeChatNotificationService.lastCapturedWeChatSmallIcon()
             ?: Icon.createWithResource(this, R.drawable.ic_wechat_notification_fallback)
         MessageTestNotifications.removeConversationShortcut(this)
@@ -345,7 +398,23 @@ class MainActivity : ComponentActivity() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
+        val bubbleState = ConversationBubbleState.create(
+            MessageTestNotifications.SHORTCUT_ID,
+            getString(R.string.test_message_sender),
+            contentIntent,
+        ).append(
+            getString(R.string.test_message_sender),
+            getString(R.string.test_message_short),
+            now - TEST_MESSAGE_SHORT_AGE_MS,
+            contentIntent,
+        ).append(
+            getString(R.string.test_message_sender),
+            getString(R.string.test_message_long),
+            now,
+            contentIntent,
+        )
+        ConversationBubbleStore.update(bubbleState)
+        val builder = Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
             .setSmallIcon(smallIcon)
             .setLargeIcon(senderAvatar)
             .setContentTitle(getString(R.string.test_message_sender))
@@ -359,10 +428,10 @@ class MainActivity : ComponentActivity() {
             .setColor(0xff33b332.toInt())
             .setContentIntent(contentIntent)
             .setShortcutId(MessageTestNotifications.SHORTCUT_ID)
-            .build()
+        ConversationBubbles.applyTo(this, builder, bubbleState, senderAvatar)
+        val notification = builder.build()
         getSystemService(NotificationManager::class.java)
             .notify(MessageTestNotifications.CURRENT_ID, notification)
-        MessageTestNotifications.removeDynamicConversationShortcut(this)
     }
 
     private fun postCallTestNotification(video: Boolean) {
@@ -406,6 +475,7 @@ private data class SetupState(
     val notificationListenerEnabled: Boolean = false,
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
+    val chatBubblesAllowed: Boolean = false,
     val promotedNotificationsAllowed: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
@@ -426,6 +496,9 @@ private data class SetupState(
 
     val liveUpdatesAvailable: Boolean
         get() = Build.VERSION.SDK_INT >= 36
+
+    val chatBubblesAvailable: Boolean
+        get() = Build.VERSION.SDK_INT >= 29
 
     val syncRemovalReady: Boolean
         get() = readLogsGranted && notificationServiceDebugEnabled
@@ -449,6 +522,7 @@ private fun WeModernApp(
     syncCommands: String,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
+    onOpenChatBubbleSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -465,6 +539,7 @@ private fun WeModernApp(
     val videoSentText = stringResource(R.string.snackbar_test_video_sent)
     val commandsCopiedText = stringResource(R.string.snackbar_sync_commands_copied)
     var syncExpanded by remember { mutableStateOf(false) }
+    var chatBubblesExpanded by remember { mutableStateOf(false) }
     var showAppIconShortcutTip by remember { mutableStateOf(false) }
     val appIconShortcutTipSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val dismissAppIconShortcutTip: () -> Unit = {
@@ -535,13 +610,18 @@ private fun WeModernApp(
                 item {
                     AdvancedSection(
                         state = state,
-                        expanded = syncExpanded,
+                        chatBubblesExpanded = chatBubblesExpanded,
+                        syncExpanded = syncExpanded,
                         syncCommands = syncCommands,
                         onSetAppIconOpensWeChat = { enabled ->
                             onSetAppIconOpensWeChat(enabled)
                             if (enabled) showAppIconShortcutTip = true
                         },
-                        onToggleExpanded = { syncExpanded = !syncExpanded },
+                        onToggleChatBubblesExpanded = {
+                            chatBubblesExpanded = !chatBubblesExpanded
+                        },
+                        onOpenChatBubbleSettings = onOpenChatBubbleSettings,
+                        onToggleSyncExpanded = { syncExpanded = !syncExpanded },
                         onCopySyncCommands = {
                             onCopySyncCommands()
                             coroutineScope.launch {
@@ -703,10 +783,16 @@ private fun SetupHero(
             )
 
             if (isReady) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     CapabilityPill(text = stringResource(R.string.capability_notification_rewrite))
                     if (state.promotedNotificationsAllowed) {
                         CapabilityPill(text = stringResource(R.string.status_live_update_label))
+                    }
+                    if (state.chatBubblesAllowed) {
+                        CapabilityPill(text = stringResource(R.string.chat_bubbles_title))
                     }
                 }
             } else {
@@ -1017,10 +1103,13 @@ private fun SectionHeader(title: String, supporting: String? = null) {
 @Composable
 private fun AdvancedSection(
     state: SetupState,
-    expanded: Boolean,
+    chatBubblesExpanded: Boolean,
+    syncExpanded: Boolean,
     syncCommands: String,
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
-    onToggleExpanded: () -> Unit,
+    onToggleChatBubblesExpanded: () -> Unit,
+    onOpenChatBubbleSettings: () -> Unit,
+    onToggleSyncExpanded: () -> Unit,
     onCopySyncCommands: () -> Unit,
 ) {
     val firstShape = RoundedCornerShape(
@@ -1035,6 +1124,7 @@ private fun AdvancedSection(
         bottomStart = 28.dp,
         bottomEnd = 28.dp,
     )
+    val middleShape = RoundedCornerShape(12.dp)
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(title = stringResource(R.string.section_advanced))
@@ -1101,6 +1191,142 @@ private fun AdvancedSection(
                     )
                 }
             }
+            if (state.chatBubblesAvailable) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = middleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onToggleChatBubblesExpanded)
+                                .semantics(mergeDescendants = true) {}
+                                .padding(horizontal = 20.dp, vertical = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(48.dp),
+                                shape = RoundedCornerShape(17.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ChatBubble,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            }
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_bubbles_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = stringResource(R.string.chat_bubbles_description),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                text = stringResource(
+                                    if (state.chatBubblesAllowed) {
+                                        R.string.setup_status_enabled
+                                    } else {
+                                        R.string.setup_status_recommended
+                                    }
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (state.chatBubblesAllowed) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.tertiary
+                                },
+                            )
+                            Icon(
+                                imageVector = if (chatBubblesExpanded) {
+                                    Icons.Rounded.ExpandLess
+                                } else {
+                                    Icons.Rounded.ExpandMore
+                                },
+                                contentDescription = stringResource(
+                                    if (chatBubblesExpanded) {
+                                        R.string.action_collapse
+                                    } else {
+                                        R.string.action_expand
+                                    }
+                                ),
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = chatBubblesExpanded,
+                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                        ) {
+                            Column {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 20.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                )
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.chat_bubbles_explanation),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(18.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(16.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            verticalAlignment = Alignment.Top,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Info,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                            Text(
+                                                modifier = Modifier.weight(1f),
+                                                text = stringResource(R.string.chat_bubbles_setup_guidance),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                    Button(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        onClick = onOpenChatBubbleSettings,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Settings,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(Modifier.size(8.dp))
+                                        Text(stringResource(R.string.action_open_chat_bubble_settings))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = lastShape,
@@ -1110,7 +1336,7 @@ private fun AdvancedSection(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onToggleExpanded)
+                        .clickable(onClick = onToggleSyncExpanded)
                         .semantics(mergeDescendants = true) {}
                         .padding(horizontal = 20.dp, vertical = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1119,16 +1345,8 @@ private fun AdvancedSection(
                     Surface(
                         modifier = Modifier.size(48.dp),
                         shape = RoundedCornerShape(17.dp),
-                        color = if (state.syncRemovalReady) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
-                        },
-                        contentColor = if (state.syncRemovalReady) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -1165,15 +1383,15 @@ private fun AdvancedSection(
                         },
                     )
                     Icon(
-                        imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        imageVector = if (syncExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                         contentDescription = stringResource(
-                            if (expanded) R.string.action_collapse else R.string.action_expand
+                            if (syncExpanded) R.string.action_collapse else R.string.action_expand
                         ),
                     )
                 }
 
                 AnimatedVisibility(
-                    visible = expanded,
+                    visible = syncExpanded,
                     enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                     exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
                 ) {
@@ -1371,7 +1589,7 @@ private fun TestActionButton(
 }
 
 @Composable
-private fun WeModernTheme(content: @Composable () -> Unit) {
+internal fun WeModernTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
     val colorScheme = when {

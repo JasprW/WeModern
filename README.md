@@ -8,6 +8,9 @@ notifications with the notification features available on modern Android.
 - Rebuilds WeChat messages with Android's conversation-style notification UI,
   including sender avatars, message history, conversation grouping, and direct
   links back to each chat.
+- Adds one native Android chat bubble per WeChat conversation on Android 10 and
+  later. Each resizable bubble keeps recent messages visible and opens the
+  original WeChat conversation from an explicit user action.
 - Turns ongoing WeChat voice and video calls into Live Updates with elapsed call
   time on supported Android versions.
 - Keeps rewritten notifications in sync when WeChat removes the originals, with
@@ -19,12 +22,21 @@ notifications with the notification features available on modern Android.
 
 ## Android 17 Support
 
-Unlike the original Nevolution-based setup, WeModern is a self-contained app
-with no separate Nevolution platform or decorator plug-in required. It supports
-Android 17 (API 37) and handles the modern notification access, sensitive
+WeModern compiles and targets Android 17 (API 37). Unlike the original
+Nevolution-based setup, it is a self-contained app with no separate Nevolution
+platform or decorator plug-in required. It handles modern notification access, sensitive
 notification access, and background `PendingIntent` launch restrictions used by
 recent Android releases. On Android 16 and later, WeChat calls can also appear as
 promoted Live Updates using `Notification.ProgressStyle`.
+
+Android 17 treats bubbles as a windowing mode. WeModern's conversation bubble
+activity is embedded, resizable, supports multiple document instances, and
+restores its message snapshot after process recreation. Opening WeChat uses the
+original notification `PendingIntent` with the visible-caller background-launch
+mode. Whether bubbles are disabled, selected per conversation, or allowed for
+every conversation remains under Android's notification settings. On Android 8
+and 9, rewritten messages continue to work as normal notifications without
+bubble metadata.
 
 ## Credits
 
@@ -65,6 +77,11 @@ After installing the APK, enable notification listener access for `WeModern` and
 ```bash
 adb shell cmd appops set me.jaspr.wemodern RECEIVE_SENSITIVE_NOTIFICATIONS allow
 ```
+
+To use chat bubbles on Android 10 or later, open **Chat bubbles** in WeModern's
+setup screen and choose the desired Android bubble preference. Android may also
+let you promote an individual conversation from its notification. Disabling
+bubbles does not disable rewritten notifications.
 
 To enable synchronous removal of rewritten WeChat notifications when WeChat
 cancels its original notification, also grant log access and enable debug

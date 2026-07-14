@@ -113,6 +113,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     private void handleWeChatNotificationRemoved(StatusBarNotification sbn, int reason) {
         if (getPackageName().equals(sbn.getPackageName())) {
             if (isMessageGroupChild(sbn.getNotification())) {
+                ConversationBubbleStore.remove(sbn.getNotification().getShortcutId());
                 mainHandler.post(this::removeMessageGroupSummaryIfNotNeeded);
             }
             return;
@@ -132,6 +133,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         String conversationKey = originalToConversation.remove(key);
         if (conversationKey != null) {
             histories.remove(conversationKey);
+            ConversationBubbleStore.remove(conversationKey);
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancel(stableId(conversationKey));
             forgetReplacement(CancelEventKey.from(sbn));
             Log.i(TAG, "cancel rewritten wechat notification after original removal"
@@ -168,7 +170,10 @@ public class WeChatNotificationService extends NotificationListenerService {
 
         removePersistedReplacement(eventKey);
         originalToConversation.remove(replacement.originalKey);
-        if (replacement.conversationKey != null) histories.remove(replacement.conversationKey);
+        if (replacement.conversationKey != null) {
+            histories.remove(replacement.conversationKey);
+            ConversationBubbleStore.remove(replacement.conversationKey);
+        }
         ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancel(replacement.replacementId);
         Log.i(TAG, "cancel rewritten wechat notification after app cancel log"
                 + ", key=" + replacement.originalKey
@@ -214,7 +219,24 @@ public class WeChatNotificationService extends NotificationListenerService {
         rememberReplacement(sbn, parsed.conversationKey, stableId(parsed.conversationKey));
         ConversationShortcuts.publish(this, parsed.conversationKey, parsed.title, originalSenderIcon,
                 original.contentIntent);
-        postReplacement(sbn, parsed, history, original, fittedSenderIcon);
+        ConversationBubbleState bubbleState = ConversationBubbleStore.get(parsed.conversationKey);
+        if (bubbleState == null) {
+            bubbleState = ConversationBubbleState.create(
+                    parsed.conversationKey,
+                    parsed.title,
+                    original.contentIntent
+            );
+        } else {
+            bubbleState = bubbleState.withMetadata(parsed.title, original.contentIntent);
+        }
+        bubbleState = bubbleState.append(
+                parsed.sender,
+                parsed.text,
+                sbn.getPostTime(),
+                original.contentIntent
+        );
+        ConversationBubbleStore.update(bubbleState);
+        postReplacement(sbn, parsed, history, original, fittedSenderIcon, bubbleState);
         hideOriginal(sbn);
         hideDuplicateOriginals(parsed, sbn.getKey());
         Log.i(TAG, "rewritten wechat notification"
@@ -227,7 +249,7 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private void postReplacement(StatusBarNotification sbn, ParsedNotification parsed,
                                  ArrayDeque<Message> history, Notification original,
-                                 Icon senderIcon) {
+                                 Icon senderIcon, ConversationBubbleState bubbleState) {
         CharSequence contentText = parsed.groupConversation
                 ? parsed.sender + ": " + parsed.text
                 : parsed.text;
@@ -260,6 +282,10 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (Build.VERSION.SDK_INT >= 29) {
             builder.setLocusId(new android.content.LocusId(parsed.conversationKey));
         }
+        Icon bubbleIcon = senderIcon != null
+                ? senderIcon
+                : Icon.createWithResource(this, R.mipmap.ic_launcher);
+        ConversationBubbles.applyTo(this, builder, bubbleState, bubbleIcon);
 
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         try {

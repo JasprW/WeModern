@@ -42,6 +42,15 @@
             android:taskAffinity=""
             android:theme="@style/ShortcutTrampolineTheme" />
 
+        <activity
+            android:name=".BubbleConversationActivity"
+            android:allowEmbedded="true"
+            android:documentLaunchMode="always"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:theme="@style/BubbleActivityTheme" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.shortcuticons"

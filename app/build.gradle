@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace "me.jaspr.wemodern"
-    compileSdk 36
+    compileSdk 37
 
     defaultConfig {
         applicationId "me.jaspr.wemodern"
         minSdk 26
-        targetSdk 36
-        versionCode 24
-        versionName "1.2"
+        targetSdk 37
+        versionCode 25
+        versionName "1.3"
     }
 
     compileOptions {

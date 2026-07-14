@@ -43,7 +43,8 @@ final class ConversationShortcuts {
     private static final String ICON_DIRECTORY = "conversation_shortcut_icons";
     private static final String ICON_FORMAT_MARKER = ".adaptive_safe_zone_v2";
     private static final String SETTINGS_SHORTCUT_ID = "wemodern_settings";
-    private static final int MAX_RECENT = 3;
+    private static final int MAX_LAUNCHER_RECENT = 3;
+    private static final int MAX_TRACKED_RECENT = 8;
     private static final int SHORTCUT_ICON_SIZE_PX = 192;
     private static final int ADAPTIVE_ICON_INSET_PX = 28;
     private static final Map<String, PendingIntent> CONTENT_INTENTS = new ConcurrentHashMap<>();
@@ -71,7 +72,7 @@ final class ConversationShortcuts {
         List<Entry> recent = load(context);
         recent.removeIf(entry -> conversationId.equals(entry.id));
         recent.add(0, new Entry(conversationId, label));
-        while (recent.size() > MAX_RECENT) recent.remove(recent.size() - 1);
+        while (recent.size() > MAX_TRACKED_RECENT) recent.remove(recent.size() - 1);
         save(context, recent);
         deleteStaleIcons(context, recent);
 
@@ -124,6 +125,23 @@ final class ConversationShortcuts {
     static boolean openConversation(Context context, String conversationId) {
         PendingIntent contentIntent = CONTENT_INTENTS.get(conversationId);
         if (contentIntent == null) return false;
+        return sendConversationIntent(context, conversationId, contentIntent);
+    }
+
+    static boolean openConversation(
+            Context context,
+            String conversationId,
+            PendingIntent contentIntent
+    ) {
+        if (contentIntent != null) registerContentIntent(conversationId, contentIntent);
+        return openConversation(context, conversationId);
+    }
+
+    private static boolean sendConversationIntent(
+            Context context,
+            String conversationId,
+            PendingIntent contentIntent
+    ) {
         try {
             if (Build.VERSION.SDK_INT >= 34) {
                 ActivityOptions options = ActivityOptions.makeBasic();
@@ -146,7 +164,7 @@ final class ConversationShortcuts {
     }
 
     private static ShortcutInfo buildShortcut(Context context, Entry entry, int rank,
-                                              Icon shortcutIcon) {
+                                              Icon shortcutIcon, boolean excludedFromLauncher) {
         Intent intent = new Intent(context, ConversationShortcutActivity.class)
                 .setAction(Intent.ACTION_VIEW)
                 .putExtra(EXTRA_CONVERSATION_ID, entry.id);
@@ -171,6 +189,9 @@ final class ConversationShortcuts {
         if (Build.VERSION.SDK_INT >= 30) {
             builder.setLongLived(true);
             builder.setCategories(Collections.singleton(ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION));
+        }
+        if (Build.VERSION.SDK_INT >= 33 && excludedFromLauncher) {
+            builder.setExcludedFromSurfaces(ShortcutInfo.SURFACE_LAUNCHER);
         }
         return builder.build();
     }
@@ -197,8 +218,11 @@ final class ConversationShortcuts {
             Icon currentShortcutIcon) {
         int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
         if (maxShortcutCount == 0) return false;
+        int retainedCount = Build.VERSION.SDK_INT >= 33
+                ? MAX_TRACKED_RECENT
+                : MAX_LAUNCHER_RECENT;
         int conversationCount = Math.min(
-                recent.size(), Math.min(MAX_RECENT, Math.max(0, maxShortcutCount - 1)));
+                recent.size(), Math.min(retainedCount, Math.max(0, maxShortcutCount - 1)));
         List<ShortcutInfo> shortcuts = new ArrayList<>(conversationCount + 1);
         for (int index = 0; index < conversationCount; index++) {
             Entry entry = recent.get(index);
@@ -206,7 +230,13 @@ final class ConversationShortcuts {
             if (shortcutIcon == null && entry.id.equals(currentConversationId)) {
                 shortcutIcon = currentShortcutIcon;
             }
-            shortcuts.add(buildShortcut(context, entry, index, shortcutIcon));
+            shortcuts.add(buildShortcut(
+                    context,
+                    entry,
+                    index,
+                    shortcutIcon,
+                    index >= MAX_LAUNCHER_RECENT
+            ));
         }
         shortcuts.add(buildSettingsShortcut(context, conversationCount));
 
@@ -250,6 +280,10 @@ final class ConversationShortcuts {
     }
 
     private static Icon iconForFile(Context context, File iconFile) {
+        if (Build.VERSION.SDK_INT < 30) {
+            Bitmap bitmap = BitmapFactory.decodeFile(iconFile.getPath());
+            return bitmap == null ? null : Icon.createWithAdaptiveBitmap(bitmap);
+        }
         Uri iconUri = FileProvider.getUriForFile(
                 context, context.getPackageName() + ".shortcuticons", iconFile);
         return Icon.createWithAdaptiveBitmapContentUri(iconUri);
@@ -347,7 +381,7 @@ final class ConversationShortcuts {
         if (raw == null) return result;
         try {
             JSONArray array = new JSONArray(raw);
-            for (int index = 0; index < array.length() && result.size() < MAX_RECENT; index++) {
+            for (int index = 0; index < array.length() && result.size() < MAX_TRACKED_RECENT; index++) {
                 JSONObject object = array.getJSONObject(index);
                 String id = object.optString("id", "");
                 String label = object.optString("label", "");

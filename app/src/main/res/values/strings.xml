@@ -13,6 +13,13 @@
     <string name="app_icon_open_wechat_title">Open WeChat from icon</string>
     <string name="app_icon_open_wechat_description">Open WeChat when you tap the WeModern app icon</string>
     <string name="app_icon_open_wechat_locked_description">Finish required notification setup to enable</string>
+    <string name="chat_bubbles_title">Chat bubbles</string>
+    <string name="chat_bubbles_description">Show each WeChat conversation in Android’s floating bubble window</string>
+    <string name="chat_bubbles_explanation">Each WeChat conversation can open in a floating window with its recent messages. Normal notifications continue to work when bubbles are off.</string>
+    <string name="chat_bubbles_setup_guidance">Android controls whether all, selected, or no conversations may bubble. Open system settings and choose the option you prefer.</string>
+    <string name="action_open_chat_bubble_settings">Open bubble settings</string>
+    <string name="bubble_open_conversation">Open conversation</string>
+    <string name="bubble_no_messages">No recent messages</string>
     <string name="app_icon_shortcut_tip_title">How to return to settings</string>
     <string name="app_icon_shortcut_tip_message">Touch and hold the WeModern app icon, then tap the Settings shortcut.</string>
     <string name="action_got_it">Got it</string>

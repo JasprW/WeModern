@@ -11,4 +11,10 @@
         <item name="android:windowDisablePreview">true</item>
         <item name="android:colorAccent">#0B57D0</item>
     </style>
+
+    <style name="BubbleActivityTheme" parent="AppTheme">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
 </resources>

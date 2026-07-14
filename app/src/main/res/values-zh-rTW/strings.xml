@@ -13,6 +13,13 @@
     <string name="app_icon_open_wechat_title">圖示直達微信</string>
     <string name="app_icon_open_wechat_description">點選 WeModern 圖示時直接開啟微信</string>
     <string name="app_icon_open_wechat_locked_description">完成必要的通知設定後可開啟</string>
+    <string name="chat_bubbles_title">聊天泡泡</string>
+    <string name="chat_bubbles_description">將每個微信對話顯示在 Android 浮動泡泡視窗中</string>
+    <string name="chat_bubbles_explanation">每個微信對話都可在浮動視窗中顯示最近訊息；關閉泡泡時，一般通知仍會正常運作。</string>
+    <string name="chat_bubbles_setup_guidance">是否允許全部、部分或不允許對話使用泡泡由 Android 管理。請前往系統設定選擇適合你的選項。</string>
+    <string name="action_open_chat_bubble_settings">開啟泡泡設定</string>
+    <string name="bubble_open_conversation">開啟對話</string>
+    <string name="bubble_no_messages">沒有最近訊息</string>
     <string name="app_icon_shortcut_tip_title">如何返回設定</string>
     <string name="app_icon_shortcut_tip_message">長按 WeModern 應用程式圖示，然後點選「設定」捷徑。</string>
     <string name="action_got_it">知道了</string>

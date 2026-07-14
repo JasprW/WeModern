@@ -1,0 +1,3 @@
+<resources>
+    <dimen name="conversation_bubble_desired_height">600dp</dimen>
+</resources>

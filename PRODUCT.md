@@ -6,11 +6,11 @@ product
 
 ## Users
 
-Android users who install WeModern to modernize WeChat notifications and call updates. They typically open the app briefly after installation or troubleshooting, and need to understand which system capabilities are active, which permissions still need attention, and what action to take next.
+Android users who install WeModern to modernize WeChat notifications, per-conversation chat bubbles, and call updates. They typically open the app briefly after installation or troubleshooting, and need to understand which system capabilities are active, which permissions still need attention, and what action to take next.
 
 ## Product Purpose
 
-WeModern rewrites WeChat message and call notifications for newer Android versions. The app UI exists to guide setup, verify that the notification service is working, expose optional reliability features, and provide lightweight tests. Success means a user can reach a working state without having to interpret Android permission terminology or duplicate status panels.
+WeModern rewrites WeChat message and call notifications for newer Android versions. Message notifications can become native Android conversation bubbles, with a compact recent-message view and an explicit handoff to the original WeChat conversation. The app UI exists to guide setup, verify that the notification service is working, expose optional reliability features, and provide lightweight tests. Success means a user can reach a working state without having to interpret Android permission terminology or duplicate status panels.
 
 ## Brand Personality
 
@@ -27,6 +27,7 @@ Avoid dense developer dashboards, giant repeated cards, disabled controls used a
 3. Separate required setup, recommended reliability improvements, and advanced ADB features.
 4. Show each fact once; completed steps become compact status rows, not disabled buttons.
 5. Keep testing available but visually secondary to setup and health.
+6. Treat Android's None, Selected, and All bubble preferences as authoritative; normal notifications must remain useful when bubbles are unavailable or disabled.
 
 ## Accessibility & Inclusion
 
