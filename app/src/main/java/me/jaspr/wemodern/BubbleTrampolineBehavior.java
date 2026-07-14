@@ -38,12 +38,6 @@ final class BubbleTrampolineBehavior {
     }
 
     static boolean shouldOpenWeChatHome(String conversationId, boolean enabled) {
-        return enabled && MessageTestNotifications.isTestShortcutId(conversationId);
-    }
-
-    static boolean shouldOpenWeChatConversation(String conversationId, boolean enabled) {
-        return enabled
-                && conversationId != null
-                && !MessageTestNotifications.isTestShortcutId(conversationId);
+        return enabled && conversationId != null;
     }
 }

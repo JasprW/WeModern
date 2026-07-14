@@ -51,7 +51,6 @@ import androidx.compose.ui.unit.dp
 class BubbleConversationActivity : ComponentActivity() {
     private var conversationState by mutableStateOf<ConversationBubbleState?>(null)
     private var trampolineEnabled by mutableStateOf(false)
-    private var trampolineAttemptedForConversationId: String? = null
     private var observedConversationId: String? = null
     private var observing = false
 
@@ -92,14 +91,6 @@ class BubbleConversationActivity : ComponentActivity() {
         observedConversationId?.let { ConversationBubbleStore.addListener(it, stateListener) }
     }
 
-    override fun onPostResume() {
-        super.onPostResume()
-        val state = conversationState ?: return
-        if (trampolineAttemptedForConversationId == state.conversationId) return
-        trampolineAttemptedForConversationId = state.conversationId
-        openTrampoline(state)
-    }
-
     override fun onStop() {
         observedConversationId?.let { ConversationBubbleStore.removeListener(it, stateListener) }
         observing = false
@@ -118,9 +109,6 @@ class BubbleConversationActivity : ComponentActivity() {
             observedConversationId?.let { ConversationBubbleStore.removeListener(it, stateListener) }
         }
         observedConversationId = restored.conversationId
-        if (conversationState?.conversationId != restored.conversationId) {
-            trampolineAttemptedForConversationId = null
-        }
         val current = ConversationBubbleStore.get(restored.conversationId)
         val resolved = current ?: restored.also(ConversationBubbleStore::update)
         conversationState = resolved
@@ -134,28 +122,16 @@ class BubbleConversationActivity : ComponentActivity() {
 
     private fun openConversation() {
         val state = conversationState ?: return
-        if (openTrampoline(state)) return
-        if (!ConversationShortcuts.openConversation(this, state.conversationId, state.contentIntent)) {
-            WeChatLauncher.open(this)
-        }
-    }
-
-    private fun openTrampoline(state: ConversationBubbleState): Boolean {
         if (BubbleTrampolineBehavior.shouldOpenWeChatHome(
                 state.conversationId,
                 trampolineEnabled,
             ) && WeChatLauncher.openInCurrentTask(this)
         ) {
-            return true
+            return
         }
-        if (BubbleTrampolineBehavior.shouldOpenWeChatConversation(
-                state.conversationId,
-                trampolineEnabled,
-            ) && WeChatLauncher.openConversationInCurrentTask(this, state.contentIntent)
-        ) {
-            return true
+        if (!ConversationShortcuts.openConversation(this, state.conversationId, state.contentIntent)) {
+            WeChatLauncher.open(this)
         }
-        return false
     }
 }
 

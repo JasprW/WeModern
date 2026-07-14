@@ -12,7 +12,10 @@ import android.content.pm.ShortcutManager;
 import android.net.Uri;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Icon;
@@ -103,14 +106,14 @@ final class ConversationShortcuts {
         }
     }
 
-    static Icon fitAvatarIcon(Context context, Icon source) {
+    static Icon circleAvatarIcon(Context context, Icon source) {
         if (source == null) return null;
         try {
             Drawable drawable = source.loadDrawable(context);
-            Bitmap bitmap = renderAdaptiveIconDrawable(drawable);
-            return bitmap == null ? source : Icon.createWithAdaptiveBitmap(bitmap);
+            Bitmap bitmap = renderCircularIconDrawable(drawable);
+            return bitmap == null ? source : Icon.createWithBitmap(bitmap);
         } catch (RuntimeException e) {
-            Log.w(TAG, "failed to fit conversation avatar", e);
+            Log.w(TAG, "failed to crop conversation avatar", e);
             return source;
         }
     }
@@ -303,6 +306,23 @@ final class ConversationShortcuts {
         drawable.setBounds(bounds[0], bounds[1], bounds[2], bounds[3]);
         drawable.draw(canvas);
         return bitmap;
+    }
+
+    private static Bitmap renderCircularIconDrawable(Drawable drawable) {
+        if (drawable == null) return null;
+        Bitmap source = Bitmap.createBitmap(
+                SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, Bitmap.Config.ARGB_8888);
+        Canvas sourceCanvas = new Canvas(source);
+        drawable.setBounds(0, 0, SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX);
+        drawable.draw(sourceCanvas);
+
+        Bitmap circular = Bitmap.createBitmap(
+                SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, Bitmap.Config.ARGB_8888);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        paint.setShader(new BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+        float radius = SHORTCUT_ICON_SIZE_PX / 2f;
+        new Canvas(circular).drawCircle(radius, radius, radius, paint);
+        return circular;
     }
 
     private static void migrateLegacyShortcutIcons(Context context) {

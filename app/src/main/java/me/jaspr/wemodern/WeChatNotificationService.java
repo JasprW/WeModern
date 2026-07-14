@@ -208,8 +208,8 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
         ArrayDeque<Message> history = histories.computeIfAbsent(parsed.conversationKey, key -> new ArrayDeque<>());
         Icon originalSenderIcon = resolveSenderIcon(original);
-        Icon fittedSenderIcon = ConversationShortcuts.fitAvatarIcon(this, originalSenderIcon);
-        Message message = new Message(parsed.sender, parsed.text, sbn.getPostTime(), fittedSenderIcon);
+        Icon circularSenderIcon = ConversationShortcuts.circleAvatarIcon(this, originalSenderIcon);
+        Message message = new Message(parsed.sender, parsed.text, sbn.getPostTime(), circularSenderIcon);
         if (!containsRecentDuplicate(history, message)) {
             history.addLast(message);
             while (history.size() > MAX_HISTORY) history.removeFirst();
@@ -236,7 +236,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                 original.contentIntent
         );
         ConversationBubbleStore.update(bubbleState);
-        postReplacement(sbn, parsed, history, original, fittedSenderIcon, bubbleState);
+        postReplacement(sbn, parsed, history, original, circularSenderIcon, bubbleState);
         hideOriginal(sbn);
         hideDuplicateOriginals(parsed, sbn.getKey());
         Log.i(TAG, "rewritten wechat notification"

@@ -9,8 +9,8 @@ notifications with the notification features available on modern Android.
   including sender avatars, message history, conversation grouping, and direct
   links back to each chat.
 - Adds one native Android chat bubble per WeChat conversation on Android 10 and
-  later. Each resizable bubble keeps recent messages visible and opens the
-  original WeChat conversation from an explicit user action.
+  later. Each resizable bubble keeps recent messages visible. An experimental
+  option can instead open WeChat Home directly as the bubble content.
 - Turns ongoing WeChat voice and video calls into Live Updates with elapsed call
   time on supported Android versions.
 - Keeps rewritten notifications in sync when WeChat removes the originals, with
@@ -31,12 +31,13 @@ promoted Live Updates using `Notification.ProgressStyle`.
 
 Android 17 treats bubbles as a windowing mode. WeModern's conversation bubble
 activity is embedded, resizable, supports multiple document instances, and
-restores its message snapshot after process recreation. Opening WeChat uses the
-original notification `PendingIntent` with the visible-caller background-launch
-mode. Whether bubbles are disabled, selected per conversation, or allowed for
-every conversation remains under Android's notification settings. On Android 8
-and 9, rewritten messages continue to work as normal notifications without
-bubble metadata.
+restores its message snapshot after process recreation. The normal conversation
+action uses WeChat's original notification `PendingIntent`; the experimental
+Bubble trampoline uses a mutable launcher `PendingIntent` so WeChat Home is the
+bubble task root from the beginning. Whether bubbles are disabled, selected per
+conversation, or allowed for every conversation remains under Android's
+notification settings. On Android 8 and 9, rewritten messages continue to work
+as normal notifications without bubble metadata.
 
 ## Credits
 

@@ -1,11 +1,8 @@
 package me.jaspr.wemodern;
 
 import android.app.Activity;
-import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentSender;
-import android.os.Build;
 import android.util.Log;
 
 final class WeChatLauncher {
@@ -21,45 +18,6 @@ final class WeChatLauncher {
 
     static boolean openInCurrentTask(Activity activity) {
         return open(activity, true, true);
-    }
-
-    static boolean openConversationInCurrentTask(
-            Activity activity,
-            PendingIntent contentIntent
-    ) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || contentIntent == null) {
-            return false;
-        }
-        if (!AppIconLaunchPolicy.canLaunchWeChatActivityIntent(
-                contentIntent.getCreatorPackage(),
-                contentIntent.isActivity()
-        )) {
-            Log.w(TAG, "conversation PendingIntent is not a WeChat activity"
-                    + ", creator=" + contentIntent.getCreatorPackage());
-            return false;
-        }
-        try {
-            Log.i(TAG, "opening WeChat conversation in current bubble"
-                    + ", creator=" + contentIntent.getCreatorPackage()
-                    + ", immutable=" + contentIntent.isImmutable()
-                    + ", flagsMask=0x" + Integer.toHexString(
-                    AppIconLaunchPolicy.taskSeparatingFlags()));
-            // As with the launcher trampoline, WeChat must become the bubble task root before its
-            // LauncherUI instance check runs. startIntentSender also lets us clear task-separating
-            // flags while preserving WeChat's private conversation extras.
-            activity.finish();
-            activity.startIntentSender(
-                    contentIntent.getIntentSender(),
-                    null,
-                    AppIconLaunchPolicy.taskSeparatingFlags(),
-                    0,
-                    0
-            );
-            return true;
-        } catch (IntentSender.SendIntentException | RuntimeException e) {
-            Log.w(TAG, "failed to open WeChat conversation in current bubble", e);
-            return false;
-        }
     }
 
     static Intent createBubbleRootIntent(Context context) {

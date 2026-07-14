@@ -86,8 +86,7 @@ final class ConversationBubbles {
                 Intent fallbackTarget
         ) {
             boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
-            if (trampolineEnabled
-                    && MessageTestNotifications.isTestShortcutId(state.conversationId)) {
+            if (trampolineEnabled) {
                 Intent weChatTarget = WeChatLauncher.createBubbleRootIntent(context);
                 if (weChatTarget != null) {
                     Log.i(TAG, "using mutable WeChat bubble root"
@@ -100,12 +99,7 @@ final class ConversationBubbles {
                             pendingIntentFlags()
                     );
                 }
-            }
-            if (trampolineEnabled) {
-                // WeChat's notification PendingIntent is immutable, but BubbleMetadata requires
-                // a mutable Activity PendingIntent. The WeModern activity therefore remains the
-                // standards-compliant bridge and sends the untouched WeChat intent on expansion.
-                Log.i(TAG, "using Activity trampoline"
+                Log.w(TAG, "WeChat launcher unavailable; using WeModern bubble"
                         + ", conversation=" + state.conversationId);
             }
             return PendingIntent.getActivity(

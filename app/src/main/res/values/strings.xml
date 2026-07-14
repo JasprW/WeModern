@@ -22,7 +22,7 @@
     <string name="bubble_open_wechat_home">Open WeChat in bubble</string>
     <string name="bubble_no_messages">No recent messages</string>
     <string name="bubble_trampoline_title">Bubble trampoline (Experimental)</string>
-    <string name="bubble_trampoline_description">Open the matching WeChat conversation inside its bubble</string>
+    <string name="bubble_trampoline_description">Open WeChat Home directly inside each bubble</string>
     <string name="bubble_trampoline_locked_description">Finish required notification setup to enable</string>
     <string name="bubble_trampoline_bubbles_required_description">Turn on Chat bubbles to configure</string>
     <string name="app_icon_shortcut_tip_title">How to return to settings</string>

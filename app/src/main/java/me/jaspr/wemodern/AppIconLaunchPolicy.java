@@ -6,8 +6,6 @@ import android.content.Intent;
 import android.os.Build;
 
 final class AppIconLaunchPolicy {
-    private static final String WECHAT_PACKAGE = "com.tencent.mm";
-
     private AppIconLaunchPolicy() {
     }
 
@@ -22,10 +20,6 @@ final class AppIconLaunchPolicy {
     static int adjustWeChatFlags(int originalFlags, boolean launchedFromBubble) {
         if (!launchedFromBubble) return originalFlags;
         return originalFlags & ~taskSeparatingFlags();
-    }
-
-    static boolean canLaunchWeChatActivityIntent(String creatorPackage, boolean isActivity) {
-        return isActivity && WECHAT_PACKAGE.equals(creatorPackage);
     }
 
     static int adjustSettingsFlags(int originalFlags, boolean launchedFromBubble) {
