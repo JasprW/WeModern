@@ -19,7 +19,12 @@
     <string name="chat_bubbles_setup_guidance">是否允許全部、部分或不允許對話使用泡泡由 Android 管理。請前往系統設定選擇適合你的選項。</string>
     <string name="action_open_chat_bubble_settings">開啟泡泡設定</string>
     <string name="bubble_open_conversation">開啟對話</string>
+    <string name="bubble_open_wechat_home">在泡泡內開啟微信</string>
     <string name="bubble_no_messages">沒有最近訊息</string>
+    <string name="bubble_trampoline_title">泡泡跳板（實驗功能）</string>
+    <string name="bubble_trampoline_description">從測試訊息泡泡內開啟微信首頁</string>
+    <string name="bubble_trampoline_locked_description">完成必要的通知設定後可開啟</string>
+    <string name="bubble_trampoline_bubbles_required_description">開啟聊天泡泡後可設定</string>
     <string name="app_icon_shortcut_tip_title">如何返回設定</string>
     <string name="app_icon_shortcut_tip_message">長按 WeModern 應用程式圖示，然後點選「設定」捷徑。</string>
     <string name="action_got_it">知道了</string>

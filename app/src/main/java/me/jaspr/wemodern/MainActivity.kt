@@ -53,6 +53,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.BatterySaver
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
@@ -155,6 +156,13 @@ class MainActivity : ComponentActivity() {
                         AppIconBehavior.setOpenWeChatEnabled(this, enabled)
                         setupState = readSetupState()
                     },
+                    onSetBubbleTrampolineEnabled = { enabled ->
+                        BubbleTrampolineBehavior.setEnabled(
+                            this,
+                            enabled && areChatBubblesAllowed(),
+                        )
+                        setupState = readSetupState()
+                    },
                     onCopySyncCommands = { copySyncCommands() },
                     onPostMessageTest = { postTestNotification() },
                     onPostVoiceCallTest = { postCallTestNotification(video = false) },
@@ -191,16 +199,21 @@ class MainActivity : ComponentActivity() {
     private fun readSetupState(): SetupState {
         val notificationListenerEnabled = isListenerEnabled()
         val postNotificationsGranted = hasPostNotificationPermission()
+        val chatBubblesAllowed = areChatBubblesAllowed()
         if ((!notificationListenerEnabled || !postNotificationsGranted) &&
             AppIconBehavior.isOpenWeChatEnabled(this)
         ) {
             AppIconBehavior.setOpenWeChatEnabled(this, false)
         }
+        if (!chatBubblesAllowed && BubbleTrampolineBehavior.isEnabled(this)) {
+            BubbleTrampolineBehavior.setEnabled(this, false)
+        }
         return SetupState(
             notificationListenerEnabled = notificationListenerEnabled,
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
-            chatBubblesAllowed = areChatBubblesAllowed(),
+            bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
+            chatBubblesAllowed = chatBubblesAllowed,
             promotedNotificationsAllowed = canPostPromotedNotifications(),
             batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
             readLogsGranted = hasReadLogsPermission(),
@@ -475,6 +488,7 @@ private data class SetupState(
     val notificationListenerEnabled: Boolean = false,
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
+    val bubbleTrampolineEnabled: Boolean = false,
     val chatBubblesAllowed: Boolean = false,
     val promotedNotificationsAllowed: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
@@ -499,6 +513,9 @@ private data class SetupState(
 
     val chatBubblesAvailable: Boolean
         get() = Build.VERSION.SDK_INT >= 29
+
+    val bubbleTrampolineAvailable: Boolean
+        get() = BubbleTrampolineBehavior.isSupported(Build.VERSION.SDK_INT)
 
     val syncRemovalReady: Boolean
         get() = readLogsGranted && notificationServiceDebugEnabled
@@ -527,6 +544,7 @@ private fun WeModernApp(
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
+    onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onCopySyncCommands: () -> Unit,
     onPostMessageTest: () -> Unit,
     onPostVoiceCallTest: () -> Unit,
@@ -617,6 +635,7 @@ private fun WeModernApp(
                             onSetAppIconOpensWeChat(enabled)
                             if (enabled) showAppIconShortcutTip = true
                         },
+                        onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
                         onToggleChatBubblesExpanded = {
                             chatBubblesExpanded = !chatBubblesExpanded
                         },
@@ -1107,6 +1126,7 @@ private fun AdvancedSection(
     syncExpanded: Boolean,
     syncCommands: String,
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
+    onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onToggleChatBubblesExpanded: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
     onToggleSyncExpanded: () -> Unit,
@@ -1307,6 +1327,74 @@ private fun AdvancedSection(
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
+                                        }
+                                    }
+                                    if (state.bubbleTrampolineAvailable) {
+                                        val trampolineCanBeSet = state.coreReady &&
+                                                state.chatBubblesAllowed
+                                        Surface(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(18.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .toggleable(
+                                                        value = state.bubbleTrampolineEnabled,
+                                                        enabled = trampolineCanBeSet,
+                                                        role = Role.Switch,
+                                                        onValueChange = onSetBubbleTrampolineEnabled,
+                                                    )
+                                                    .semantics(mergeDescendants = true) {}
+                                                    .padding(16.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                                    contentDescription = null,
+                                                    tint = if (trampolineCanBeSet) {
+                                                        MaterialTheme.colorScheme.primary
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    },
+                                                )
+                                                Column(
+                                                    modifier = Modifier.weight(1f),
+                                                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                                                ) {
+                                                    Text(
+                                                        text = stringResource(
+                                                            R.string.bubble_trampoline_title
+                                                        ),
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                    )
+                                                    Text(
+                                                        text = stringResource(
+                                                            when {
+                                                                !state.chatBubblesAllowed -> {
+                                                                    R.string.bubble_trampoline_bubbles_required_description
+                                                                }
+                                                                !state.coreReady -> {
+                                                                    R.string.bubble_trampoline_locked_description
+                                                                }
+                                                                else -> {
+                                                                    R.string.bubble_trampoline_description
+                                                                }
+                                                            }
+                                                        ),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                                Switch(
+                                                    checked = state.bubbleTrampolineEnabled,
+                                                    enabled = trampolineCanBeSet,
+                                                    onCheckedChange = null,
+                                                )
+                                            }
                                         }
                                     }
                                     Button(

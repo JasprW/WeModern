@@ -10,8 +10,13 @@ import org.junit.Test;
 
 public class AppIconLaunchPolicyTest {
     @Test
-    public void bubbledLaunchRemovesNewTaskFlag() {
-        int original = Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP;
+    public void bubbledLaunchRemovesTaskSeparatingFlags() {
+        int original = Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TASK
+                | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP;
 
         assertEquals(
                 Intent.FLAG_ACTIVITY_CLEAR_TOP,

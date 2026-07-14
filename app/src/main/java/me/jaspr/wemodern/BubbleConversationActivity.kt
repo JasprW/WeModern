@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 
 class BubbleConversationActivity : ComponentActivity() {
     private var conversationState by mutableStateOf<ConversationBubbleState?>(null)
+    private var testTrampolineEnabled by mutableStateOf(false)
     private var observedConversationId: String? = null
     private var observing = false
 
@@ -72,6 +73,7 @@ class BubbleConversationActivity : ComponentActivity() {
             WeModernTheme {
                 BubbleConversationScreen(
                     state = conversationState,
+                    opensWeChatHome = testTrampolineEnabled,
                     onOpenConversation = ::openConversation,
                 )
             }
@@ -105,6 +107,10 @@ class BubbleConversationActivity : ComponentActivity() {
         val current = ConversationBubbleStore.get(restored.conversationId)
         val resolved = current ?: restored.also(ConversationBubbleStore::update)
         conversationState = resolved
+        testTrampolineEnabled = BubbleTrampolineBehavior.shouldOpenWeChatHome(
+            restored.conversationId,
+            BubbleTrampolineBehavior.isEnabled(this),
+        )
         title = resolved.title
         if (Build.VERSION.SDK_INT >= 30) {
             setLocusContext(LocusId(resolved.conversationId), null)
@@ -114,6 +120,13 @@ class BubbleConversationActivity : ComponentActivity() {
 
     private fun openConversation() {
         val state = conversationState ?: return
+        if (BubbleTrampolineBehavior.shouldOpenWeChatHome(
+                state.conversationId,
+                testTrampolineEnabled,
+            ) && WeChatLauncher.openInCurrentTask(this)
+        ) {
+            return
+        }
         if (!ConversationShortcuts.openConversation(this, state.conversationId, state.contentIntent)) {
             WeChatLauncher.open(this)
         }
@@ -124,6 +137,7 @@ class BubbleConversationActivity : ComponentActivity() {
 @Composable
 private fun BubbleConversationScreen(
     state: ConversationBubbleState?,
+    opensWeChatHome: Boolean,
     onOpenConversation: () -> Unit,
 ) {
     Scaffold(
@@ -180,7 +194,15 @@ private fun BubbleConversationScreen(
                         contentDescription = null,
                     )
                     Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.bubble_open_conversation))
+                    Text(
+                        stringResource(
+                            if (opensWeChatHome) {
+                                R.string.bubble_open_wechat_home
+                            } else {
+                                R.string.bubble_open_conversation
+                            }
+                        )
+                    )
                 }
             }
         },

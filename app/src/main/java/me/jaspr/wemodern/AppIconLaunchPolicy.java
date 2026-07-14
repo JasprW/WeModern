@@ -11,7 +11,12 @@ final class AppIconLaunchPolicy {
 
     static int adjustWeChatFlags(int originalFlags, boolean launchedFromBubble) {
         if (!launchedFromBubble) return originalFlags;
-        return originalFlags & ~Intent.FLAG_ACTIVITY_NEW_TASK;
+        int taskSeparatingFlags = Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TASK
+                | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED;
+        return originalFlags & ~taskSeparatingFlags;
     }
 
     static int adjustSettingsFlags(int originalFlags, boolean launchedFromBubble) {
