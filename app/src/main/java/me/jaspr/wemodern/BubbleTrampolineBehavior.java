@@ -22,22 +22,43 @@ final class BubbleTrampolineBehavior {
                 PREFERENCES,
                 Context.MODE_PRIVATE
         );
-        return preferences.getBoolean(
+        boolean enabled = preferences.getBoolean(
                 OPEN_WECHAT_IN_BUBBLE,
                 preferences.getBoolean(LEGACY_TEST_MESSAGE_OPENS_WECHAT, false)
         );
+        if (enabled && !ChatBubbleBehavior.isReady(
+                ChatBubbleBehavior.isEnabled(context),
+                ChatBubbleBehavior.isSystemAllowed(context)
+        )) {
+            setEnabled(context, false);
+            return false;
+        }
+        return enabled;
     }
 
     static void setEnabled(Context context, boolean enabled) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(OPEN_WECHAT_IN_BUBBLE,
-                        enabled && isSupported(Build.VERSION.SDK_INT))
+                        enabled
+                                && isSupported(Build.VERSION.SDK_INT)
+                                && ChatBubbleBehavior.isReady(
+                                        ChatBubbleBehavior.isEnabled(context),
+                                        ChatBubbleBehavior.isSystemAllowed(context)))
                 .remove(LEGACY_TEST_MESSAGE_OPENS_WECHAT)
                 .apply();
     }
 
     static boolean shouldOpenWeChatHome(String conversationId, boolean enabled) {
         return enabled && conversationId != null;
+    }
+
+    static boolean shouldPreserveMessageReplacement(
+            boolean enabled,
+            boolean hasConversation
+    ) {
+        // A notification bubble task is owned by its host notification. Removing the
+        // rewritten message while WeChat is starting tears down the task immediately.
+        return enabled && hasConversation;
     }
 }

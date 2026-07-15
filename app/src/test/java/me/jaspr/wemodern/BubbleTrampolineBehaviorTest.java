@@ -27,4 +27,11 @@ public class BubbleTrampolineBehaviorTest {
         assertTrue(BubbleTrampolineBehavior.shouldOpenWeChatHome("wechat_alice", true));
         assertFalse(BubbleTrampolineBehavior.shouldOpenWeChatHome(null, true));
     }
+
+    @Test
+    public void enabledTrampolinePreservesMessageBubbleHostNotification() {
+        assertTrue(BubbleTrampolineBehavior.shouldPreserveMessageReplacement(true, true));
+        assertFalse(BubbleTrampolineBehavior.shouldPreserveMessageReplacement(false, true));
+        assertFalse(BubbleTrampolineBehavior.shouldPreserveMessageReplacement(true, false));
+    }
 }

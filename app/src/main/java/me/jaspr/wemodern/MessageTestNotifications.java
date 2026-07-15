@@ -31,6 +31,9 @@ final class MessageTestNotifications {
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
         if (manager == null) return;
 
+        // Keep Settings safe while the test shortcut is briefly dynamic for notification posting.
+        ConversationShortcuts.reserveTransientShortcutSlot(context);
+
         Intent intent = new Intent(context, MainActivity.class)
                 .setAction(Intent.ACTION_VIEW)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -48,15 +51,18 @@ final class MessageTestNotifications {
                         .build())
                 .setLongLived(true)
                 .setCategories(Collections.singleton(ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION));
-        // A bubble's conversation shortcut must remain available to SystemUI. Android 17
-        // does not treat a test shortcut excluded from every launcher surface as valid.
+        // The shortcut must be dynamic while the notification is posted. It is converted to a
+        // long-lived cached shortcut immediately afterward so SystemUI can keep using it without
+        // exposing Mia in the app-icon shortcut list.
         manager.pushDynamicShortcut(builder.build());
     }
 
-    static void removeDynamicConversationShortcut(Context context) {
+    static void retainAsCachedConversationShortcut(Context context) {
         if (Build.VERSION.SDK_INT < 30) return;
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
-        if (manager != null) manager.removeDynamicShortcuts(Collections.singletonList(SHORTCUT_ID));
+        if (manager == null) return;
+        manager.removeDynamicShortcuts(Collections.singletonList(SHORTCUT_ID));
+        ConversationShortcuts.refreshIcons(context);
     }
 
     static void removeConversationShortcut(Context context) {

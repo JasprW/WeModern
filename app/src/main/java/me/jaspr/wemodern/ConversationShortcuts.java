@@ -14,7 +14,10 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.BitmapDrawable;
@@ -44,12 +47,15 @@ final class ConversationShortcuts {
     private static final String STORE = "conversation_shortcuts";
     private static final String KEY_RECENT = "recent";
     private static final String ICON_DIRECTORY = "conversation_shortcut_icons";
-    private static final String ICON_FORMAT_MARKER = ".adaptive_safe_zone_v2";
+    private static final String ICON_FORMAT_MARKER = ".adaptive_bubble_safe_zone_v4";
     private static final String SETTINGS_SHORTCUT_ID = "wemodern_settings";
-    private static final int MAX_LAUNCHER_RECENT = 3;
     private static final int MAX_TRACKED_RECENT = 8;
+    // ShortcutManager reports the publishing limit, which can be higher than the
+    // number of deep shortcuts actually rendered by launchers such as Pixel Launcher.
+    private static final int MAX_VISIBLE_LAUNCHER_SHORTCUTS = 4;
+    private static final int SETTINGS_SHORTCUT_SLOTS = 1;
+    private static final int SETTINGS_AND_TRANSIENT_SHORTCUT_SLOTS = 2;
     private static final int SHORTCUT_ICON_SIZE_PX = 192;
-    private static final int ADAPTIVE_ICON_INSET_PX = 28;
     private static final Map<String, PendingIntent> CONTENT_INTENTS = new ConcurrentHashMap<>();
 
     private ConversationShortcuts() {
@@ -66,21 +72,31 @@ final class ConversationShortcuts {
         migrateLegacyShortcutIcons(context);
 
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
-        if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
+        if (manager == null) return;
+        int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
+        if (maxShortcutCount == 0) return;
 
         String label = title == null ? "" : title.toString().trim();
         if (label.isEmpty()) label = context.getString(R.string.app_name);
         Icon currentShortcutIcon = persistIcon(context, conversationId, senderIcon);
 
-        List<Entry> recent = load(context);
+        List<Entry> recent = load(context, maxShortcutCount);
         recent.removeIf(entry -> conversationId.equals(entry.id));
         recent.add(0, new Entry(conversationId, label));
-        while (recent.size() > MAX_TRACKED_RECENT) recent.remove(recent.size() - 1);
+        int trackedCount = Math.max(
+                MAX_TRACKED_RECENT,
+                maxLauncherConversationCount(maxShortcutCount));
+        while (recent.size() > trackedCount) recent.remove(recent.size() - 1);
         save(context, recent);
         deleteStaleIcons(context, recent);
 
         if (replaceDynamicShortcuts(
-                context, manager, recent, conversationId, currentShortcutIcon)) {
+                context,
+                manager,
+                recent,
+                conversationId,
+                currentShortcutIcon,
+                SETTINGS_SHORTCUT_SLOTS)) {
             manager.reportShortcutUsed(conversationId);
         }
     }
@@ -88,7 +104,9 @@ final class ConversationShortcuts {
     static void ensureSettingsShortcut(Context context) {
         migrateLegacyShortcutIcons(context);
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
-        if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
+        if (manager == null) return;
+        int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
+        if (maxShortcutCount == 0) return;
         try {
             for (ShortcutInfo shortcut : manager.getDynamicShortcuts()) {
                 if (SETTINGS_SHORTCUT_ID.equals(shortcut.getId())) return;
@@ -97,7 +115,13 @@ final class ConversationShortcuts {
             Log.w(TAG, "failed to inspect dynamic shortcuts", e);
             return;
         }
-        replaceDynamicShortcuts(context, manager, load(context), null, null);
+        replaceDynamicShortcuts(
+                context,
+                manager,
+                load(context, maxShortcutCount),
+                null,
+                null,
+                SETTINGS_SHORTCUT_SLOTS);
     }
 
     static void registerContentIntent(String conversationId, PendingIntent contentIntent) {
@@ -121,8 +145,31 @@ final class ConversationShortcuts {
     static void refreshIcons(Context context) {
         migrateLegacyShortcutIcons(context);
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
-        if (manager == null || manager.getMaxShortcutCountPerActivity() == 0) return;
-        replaceDynamicShortcuts(context, manager, load(context), null, null);
+        if (manager == null) return;
+        int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
+        if (maxShortcutCount == 0) return;
+        replaceDynamicShortcuts(
+                context,
+                manager,
+                load(context, maxShortcutCount),
+                null,
+                null,
+                SETTINGS_SHORTCUT_SLOTS);
+    }
+
+    static void reserveTransientShortcutSlot(Context context) {
+        migrateLegacyShortcutIcons(context);
+        ShortcutManager manager = context.getSystemService(ShortcutManager.class);
+        if (manager == null) return;
+        int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
+        if (maxShortcutCount == 0) return;
+        replaceDynamicShortcuts(
+                context,
+                manager,
+                load(context, maxShortcutCount),
+                null,
+                null,
+                SETTINGS_AND_TRANSIENT_SHORTCUT_SLOTS);
     }
 
     static boolean openConversation(Context context, String conversationId) {
@@ -166,8 +213,12 @@ final class ConversationShortcuts {
         }
     }
 
-    private static ShortcutInfo buildShortcut(Context context, Entry entry, int rank,
-                                              Icon shortcutIcon, boolean excludedFromLauncher) {
+    private static ShortcutInfo buildShortcut(
+            Context context,
+            Entry entry,
+            int rank,
+            Icon shortcutIcon
+    ) {
         Intent intent = new Intent(context, ConversationShortcutActivity.class)
                 .setAction(Intent.ACTION_VIEW)
                 .putExtra(EXTRA_CONVERSATION_ID, entry.id);
@@ -193,9 +244,6 @@ final class ConversationShortcuts {
             builder.setLongLived(true);
             builder.setCategories(Collections.singleton(ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION));
         }
-        if (Build.VERSION.SDK_INT >= 33 && excludedFromLauncher) {
-            builder.setExcludedFromSurfaces(ShortcutInfo.SURFACE_LAUNCHER);
-        }
         return builder.build();
     }
 
@@ -218,14 +266,12 @@ final class ConversationShortcuts {
             ShortcutManager manager,
             List<Entry> recent,
             String currentConversationId,
-            Icon currentShortcutIcon) {
+            Icon currentShortcutIcon,
+            int reservedShortcutSlots) {
         int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
         if (maxShortcutCount == 0) return false;
-        int retainedCount = Build.VERSION.SDK_INT >= 33
-                ? MAX_TRACKED_RECENT
-                : MAX_LAUNCHER_RECENT;
-        int conversationCount = Math.min(
-                recent.size(), Math.min(retainedCount, Math.max(0, maxShortcutCount - 1)));
+        int conversationCount = launcherConversationCount(
+                recent.size(), maxShortcutCount, reservedShortcutSlots);
         List<ShortcutInfo> shortcuts = new ArrayList<>(conversationCount + 1);
         for (int index = 0; index < conversationCount; index++) {
             Entry entry = recent.get(index);
@@ -237,8 +283,7 @@ final class ConversationShortcuts {
                     context,
                     entry,
                     index,
-                    shortcutIcon,
-                    index >= MAX_LAUNCHER_RECENT
+                    shortcutIcon
             ));
         }
         shortcuts.add(buildSettingsShortcut(context, conversationCount));
@@ -253,6 +298,31 @@ final class ConversationShortcuts {
             Log.w(TAG, "failed to publish dynamic shortcuts", e);
             return false;
         }
+    }
+
+    static int maxLauncherConversationCount(int maxShortcutCount) {
+        return Math.max(
+                0,
+                visibleLauncherShortcutCount(maxShortcutCount) - SETTINGS_SHORTCUT_SLOTS);
+    }
+
+    static int launcherConversationCount(
+            int recentCount,
+            int maxShortcutCount,
+            int reservedShortcutSlots
+    ) {
+        return Math.min(
+                Math.max(0, recentCount),
+                Math.max(
+                        0,
+                        visibleLauncherShortcutCount(maxShortcutCount)
+                                - Math.max(0, reservedShortcutSlots)));
+    }
+
+    private static int visibleLauncherShortcutCount(int maxShortcutCount) {
+        return Math.min(
+                Math.max(0, maxShortcutCount),
+                MAX_VISIBLE_LAUNCHER_SHORTCUTS);
     }
 
     private static Icon persistIcon(Context context, String conversationId, Icon source) {
@@ -293,28 +363,71 @@ final class ConversationShortcuts {
     }
 
     static int[] adaptiveIconBounds(int size) {
-        int inset = Math.round(size * ADAPTIVE_ICON_INSET_PX / (float) SHORTCUT_ICON_SIZE_PX);
-        return new int[] {inset, inset, size - inset, size - inset};
+        // Android adaptive icons reserve the outer sixth on every side for masking. SystemUI
+        // prefers the conversation shortcut icon over BubbleMetadata.icon, so keep the complete
+        // avatar inside that visible region. Pixels outside it are edge-extended rather than left
+        // transparent, which keeps the normal notification icon visually full-bleed.
+        int inset = Math.max(0, Math.round(size / 6f));
+        return new int[] {inset, inset, Math.max(inset, size - inset), Math.max(inset, size - inset)};
     }
 
     private static Bitmap renderAdaptiveIconDrawable(Drawable drawable) {
-        if (drawable == null) return null;
-        Bitmap bitmap = Bitmap.createBitmap(
+        Bitmap source = renderFitXYDrawable(drawable);
+        if (source == null) return null;
+
+        Bitmap output = Bitmap.createBitmap(
                 SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
         int[] bounds = adaptiveIconBounds(SHORTCUT_ICON_SIZE_PX);
-        drawable.setBounds(bounds[0], bounds[1], bounds[2], bounds[3]);
-        drawable.draw(canvas);
-        return bitmap;
+        RectF sourceBounds = new RectF(
+                0, 0, SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX);
+        RectF visibleBounds = new RectF(bounds[0], bounds[1], bounds[2], bounds[3]);
+        Matrix matrix = new Matrix();
+        matrix.setRectToRect(sourceBounds, visibleBounds, Matrix.ScaleToFit.FILL);
+
+        BitmapShader shader = new BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+        shader.setLocalMatrix(matrix);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        paint.setShader(shader);
+        new Canvas(output).drawRect(
+                0, 0, SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, paint);
+        return output;
     }
 
-    private static Bitmap renderCircularIconDrawable(Drawable drawable) {
+    private static Bitmap renderFitXYDrawable(Drawable drawable) {
         if (drawable == null) return null;
         Bitmap source = Bitmap.createBitmap(
                 SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, Bitmap.Config.ARGB_8888);
         Canvas sourceCanvas = new Canvas(source);
         drawable.setBounds(0, 0, SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX);
         drawable.draw(sourceCanvas);
+
+        int[] pixels = new int[SHORTCUT_ICON_SIZE_PX * SHORTCUT_ICON_SIZE_PX];
+        source.getPixels(
+                pixels,
+                0,
+                SHORTCUT_ICON_SIZE_PX,
+                0,
+                0,
+                SHORTCUT_ICON_SIZE_PX,
+                SHORTCUT_ICON_SIZE_PX);
+        int[] visibleBounds = visiblePixelBounds(
+                pixels, SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX);
+        Rect sourceBounds = new Rect(
+                visibleBounds[0], visibleBounds[1], visibleBounds[2], visibleBounds[3]);
+        Rect outputBounds = new Rect(0, 0, SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX);
+        if (sourceBounds.equals(outputBounds)) return source;
+
+        Bitmap output = Bitmap.createBitmap(
+                SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, Bitmap.Config.ARGB_8888);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        new Canvas(output).drawBitmap(source, sourceBounds, outputBounds, paint);
+        return output;
+    }
+
+    private static Bitmap renderCircularIconDrawable(Drawable drawable) {
+        if (drawable == null) return null;
+        Bitmap source = renderFitXYDrawable(drawable);
+        if (source == null) return null;
 
         Bitmap circular = Bitmap.createBitmap(
                 SHORTCUT_ICON_SIZE_PX, SHORTCUT_ICON_SIZE_PX, Bitmap.Config.ARGB_8888);
@@ -323,6 +436,27 @@ final class ConversationShortcuts {
         float radius = SHORTCUT_ICON_SIZE_PX / 2f;
         new Canvas(circular).drawCircle(radius, radius, radius, paint);
         return circular;
+    }
+
+    static int[] visiblePixelBounds(int[] pixels, int width, int height) {
+        if (pixels == null || width <= 0 || height <= 0 || pixels.length < width * height) {
+            return new int[] {0, 0, Math.max(0, width), Math.max(0, height)};
+        }
+        int left = width;
+        int top = height;
+        int right = 0;
+        int bottom = 0;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if ((pixels[y * width + x] >>> 24) == 0) continue;
+                left = Math.min(left, x);
+                top = Math.min(top, y);
+                right = Math.max(right, x + 1);
+                bottom = Math.max(bottom, y + 1);
+            }
+        }
+        if (left >= right || top >= bottom) return new int[] {0, 0, width, height};
+        return new int[] {left, top, right, bottom};
     }
 
     private static void migrateLegacyShortcutIcons(Context context) {
@@ -395,13 +529,16 @@ final class ConversationShortcuts {
         return new File(iconDirectory(context), Integer.toHexString(conversationId.hashCode()) + ".png");
     }
 
-    private static List<Entry> load(Context context) {
+    private static List<Entry> load(Context context, int maxShortcutCount) {
         String raw = preferences(context).getString(KEY_RECENT, null);
         List<Entry> result = new ArrayList<>();
         if (raw == null) return result;
+        int trackedCount = Math.max(
+                MAX_TRACKED_RECENT,
+                maxLauncherConversationCount(maxShortcutCount));
         try {
             JSONArray array = new JSONArray(raw);
-            for (int index = 0; index < array.length() && result.size() < MAX_TRACKED_RECENT; index++) {
+            for (int index = 0; index < array.length() && result.size() < trackedCount; index++) {
                 JSONObject object = array.getJSONObject(index);
                 String id = object.optString("id", "");
                 String label = object.optString("label", "");

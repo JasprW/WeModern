@@ -51,6 +51,10 @@
             android:resizeableActivity="true"
             android:theme="@style/BubbleActivityTheme" />
 
+        <receiver
+            android:name=".BubbleDismissReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.shortcuticons"

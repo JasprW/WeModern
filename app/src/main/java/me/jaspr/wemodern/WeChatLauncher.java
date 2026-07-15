@@ -1,6 +1,5 @@
 package me.jaspr.wemodern;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
@@ -13,11 +12,7 @@ final class WeChatLauncher {
     }
 
     static boolean open(Context context) {
-        return open(context, AppIconLaunchPolicy.isLaunchedFromBubble(context), false);
-    }
-
-    static boolean openInCurrentTask(Activity activity) {
-        return open(activity, true, true);
+        return open(context, AppIconLaunchPolicy.isLaunchedFromBubble(context));
     }
 
     static Intent createBubbleRootIntent(Context context) {
@@ -35,8 +30,7 @@ final class WeChatLauncher {
 
     private static boolean open(
             Context context,
-            boolean keepInCurrentTask,
-            boolean replaceBubbleRoot
+            boolean keepInCurrentTask
     ) {
         Intent launchIntent = keepInCurrentTask
                 ? createBubbleRootIntent(context)
@@ -53,16 +47,9 @@ final class WeChatLauncher {
         }
         try {
             Log.i(TAG, "opening WeChat keepInCurrentTask=" + keepInCurrentTask
-                    + " replaceBubbleRoot=" + replaceBubbleRoot
                     + " flags=0x" + Integer.toHexString(launchIntent.getFlags())
                     + " action=" + launchIntent.getAction()
                     + " categories=" + launchIntent.getCategories());
-            if (replaceBubbleRoot) {
-                // LauncherUI rejects a second instance when another package remains the root of
-                // its task. Mark this trampoline as finishing before the launch so WeChat becomes
-                // the root of the existing bubble task during its instance check.
-                ((Activity) context).finish();
-            }
             context.startActivity(launchIntent);
             return true;
         } catch (RuntimeException e) {

@@ -129,7 +129,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         NotificationChannels.ensure(this)
-        ConversationShortcuts.ensureSettingsShortcut(this)
         getSystemService(NotificationManager::class.java).apply {
             cancel(MessageTestNotifications.CURRENT_ID)
             cancel(CallTestNotifications.CURRENT_ID)
@@ -137,6 +136,8 @@ class MainActivity : ComponentActivity() {
         }
         MessageTestNotifications.removeConversationShortcut(this)
         ConversationBubbleStore.remove(MessageTestNotifications.SHORTCUT_ID)
+        ConversationShortcuts.refreshIcons(this)
+        ConversationBubbles.syncActiveNotifications(this)
         setupState = readSetupState()
 
         setContent {
@@ -156,11 +157,21 @@ class MainActivity : ComponentActivity() {
                         AppIconBehavior.setOpenWeChatEnabled(this, enabled)
                         setupState = readSetupState()
                     },
+                    onSetChatBubblesEnabled = { enabled ->
+                        ChatBubbleBehavior.setEnabled(this, enabled)
+                        if (!enabled) BubbleTrampolineBehavior.setEnabled(this, false)
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                        if (enabled && !setupState.chatBubblesSystemAllowed) {
+                            openChatBubbleSettings()
+                        }
+                    },
                     onSetBubbleTrampolineEnabled = { enabled ->
                         BubbleTrampolineBehavior.setEnabled(
                             this,
-                            enabled && areChatBubblesAllowed(),
+                            enabled && setupState.bubbleTrampolineCanBeSet,
                         )
+                        ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
                     },
                     onCopySyncCommands = { copySyncCommands() },
@@ -199,13 +210,20 @@ class MainActivity : ComponentActivity() {
     private fun readSetupState(): SetupState {
         val notificationListenerEnabled = isListenerEnabled()
         val postNotificationsGranted = hasPostNotificationPermission()
-        val chatBubblesAllowed = areChatBubblesAllowed()
+        val chatBubblesEnabled = ChatBubbleBehavior.isEnabled(this)
+        val chatBubblesSystemAllowed = ChatBubbleBehavior.isSystemAllowed(this)
+        val coreReady = notificationListenerEnabled && postNotificationsGranted
         if ((!notificationListenerEnabled || !postNotificationsGranted) &&
             AppIconBehavior.isOpenWeChatEnabled(this)
         ) {
             AppIconBehavior.setOpenWeChatEnabled(this, false)
         }
-        if (!chatBubblesAllowed && BubbleTrampolineBehavior.isEnabled(this)) {
+        if (!ChatBubbleBehavior.canUseTrampoline(
+                coreReady,
+                chatBubblesEnabled,
+                chatBubblesSystemAllowed,
+            ) && BubbleTrampolineBehavior.isEnabled(this)
+        ) {
             BubbleTrampolineBehavior.setEnabled(this, false)
         }
         return SetupState(
@@ -213,7 +231,8 @@ class MainActivity : ComponentActivity() {
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
             bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
-            chatBubblesAllowed = chatBubblesAllowed,
+            chatBubblesEnabled = chatBubblesEnabled,
+            chatBubblesSystemAllowed = chatBubblesSystemAllowed,
             promotedNotificationsAllowed = canPostPromotedNotifications(),
             batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
             readLogsGranted = hasReadLogsPermission(),
@@ -234,18 +253,6 @@ class MainActivity : ComponentActivity() {
 
     private fun canPostPromotedNotifications(): Boolean {
         return Build.VERSION.SDK_INT >= 36 && getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun areChatBubblesAllowed(): Boolean {
-        if (Build.VERSION.SDK_INT < 29) return false
-        val manager = getSystemService(NotificationManager::class.java)
-        return if (Build.VERSION.SDK_INT >= 31) {
-            manager.areBubblesEnabled() &&
-                    manager.bubblePreference != NotificationManager.BUBBLE_PREFERENCE_NONE
-        } else {
-            manager.areBubblesAllowed()
-        }
     }
 
     private fun isBatteryOptimizationIgnored(): Boolean {
@@ -394,8 +401,8 @@ class MainActivity : ComponentActivity() {
                     getString(R.string.test_message_sender),
                 )
         }
-        val smallIcon = WeChatNotificationService.lastCapturedWeChatSmallIcon()
-            ?: Icon.createWithResource(this, R.drawable.ic_wechat_notification_fallback)
+        // Extracted from WeChat 8.0.69 drawable/bdo, the icon used by its message notifications.
+        val smallIcon = Icon.createWithResource(this, R.drawable.ic_wechat_notification_small)
         MessageTestNotifications.removeConversationShortcut(this)
         MessageTestNotifications.publishConversationShortcut(
             this,
@@ -441,10 +448,17 @@ class MainActivity : ComponentActivity() {
             .setColor(0xff33b332.toInt())
             .setContentIntent(contentIntent)
             .setShortcutId(MessageTestNotifications.SHORTCUT_ID)
-        ConversationBubbles.applyTo(this, builder, bubbleState, senderAvatar)
+        ConversationBubbles.applyTo(
+            this,
+            builder,
+            bubbleState,
+            senderAvatar,
+            MessageTestNotifications.CURRENT_ID,
+        )
         val notification = builder.build()
         getSystemService(NotificationManager::class.java)
             .notify(MessageTestNotifications.CURRENT_ID, notification)
+        MessageTestNotifications.retainAsCachedConversationShortcut(this)
     }
 
     private fun postCallTestNotification(video: Boolean) {
@@ -489,7 +503,8 @@ private data class SetupState(
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
     val bubbleTrampolineEnabled: Boolean = false,
-    val chatBubblesAllowed: Boolean = false,
+    val chatBubblesEnabled: Boolean = false,
+    val chatBubblesSystemAllowed: Boolean = false,
     val promotedNotificationsAllowed: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
@@ -512,13 +527,27 @@ private data class SetupState(
         get() = Build.VERSION.SDK_INT >= 36
 
     val chatBubblesAvailable: Boolean
-        get() = Build.VERSION.SDK_INT >= 29
+        get() = ChatBubbleBehavior.isSupported(Build.VERSION.SDK_INT)
+
+    val chatBubblesReady: Boolean
+        get() = coreReady &&
+                ChatBubbleBehavior.isReady(chatBubblesEnabled, chatBubblesSystemAllowed)
 
     val bubbleTrampolineAvailable: Boolean
         get() = BubbleTrampolineBehavior.isSupported(Build.VERSION.SDK_INT)
 
+    val bubbleTrampolineCanBeSet: Boolean
+        get() = ChatBubbleBehavior.canUseTrampoline(
+            coreReady,
+            chatBubblesEnabled,
+            chatBubblesSystemAllowed,
+        )
+
     val syncRemovalReady: Boolean
         get() = readLogsGranted && notificationServiceDebugEnabled
+
+    val syncRemovalPausedForBubbles: Boolean
+        get() = syncRemovalReady && bubbleTrampolineEnabled
 }
 
 private enum class RequiredSetupStep {
@@ -544,6 +573,7 @@ private fun WeModernApp(
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
+    onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onCopySyncCommands: () -> Unit,
     onPostMessageTest: () -> Unit,
@@ -635,6 +665,7 @@ private fun WeModernApp(
                             onSetAppIconOpensWeChat(enabled)
                             if (enabled) showAppIconShortcutTip = true
                         },
+                        onSetChatBubblesEnabled = onSetChatBubblesEnabled,
                         onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
                         onToggleChatBubblesExpanded = {
                             chatBubblesExpanded = !chatBubblesExpanded
@@ -810,7 +841,7 @@ private fun SetupHero(
                     if (state.promotedNotificationsAllowed) {
                         CapabilityPill(text = stringResource(R.string.status_live_update_label))
                     }
-                    if (state.chatBubblesAllowed) {
+                    if (state.chatBubblesReady) {
                         CapabilityPill(text = stringResource(R.string.chat_bubbles_title))
                     }
                 }
@@ -1126,6 +1157,7 @@ private fun AdvancedSection(
     syncExpanded: Boolean,
     syncCommands: String,
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
+    onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onToggleChatBubblesExpanded: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
@@ -1258,17 +1290,20 @@ private fun AdvancedSection(
                             }
                             Text(
                                 text = stringResource(
-                                    if (state.chatBubblesAllowed) {
-                                        R.string.setup_status_enabled
-                                    } else {
-                                        R.string.setup_status_recommended
+                                    when {
+                                        !state.chatBubblesEnabled -> R.string.setup_status_missing
+                                        !state.coreReady -> {
+                                            R.string.setup_status_requires_notifications
+                                        }
+                                        !state.chatBubblesSystemAllowed -> R.string.setup_status_pending
+                                        else -> R.string.setup_status_enabled
                                     }
                                 ),
                                 style = MaterialTheme.typography.labelLarge,
-                                color = if (state.chatBubblesAllowed) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.tertiary
+                                color = when {
+                                    state.chatBubblesReady -> MaterialTheme.colorScheme.primary
+                                    state.chatBubblesEnabled -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 },
                             )
                             Icon(
@@ -1312,26 +1347,147 @@ private fun AdvancedSection(
                                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(16.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .toggleable(
+                                                    value = state.chatBubblesEnabled,
+                                                    enabled = state.coreReady ||
+                                                            state.chatBubblesEnabled,
+                                                    role = Role.Switch,
+                                                    onValueChange = onSetChatBubblesEnabled,
+                                                )
+                                                .semantics(mergeDescendants = true) {}
+                                                .padding(16.dp),
                                             horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                            verticalAlignment = Alignment.Top,
+                                            verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Rounded.Info,
+                                                imageVector = Icons.Rounded.ChatBubble,
                                                 contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
+                                                tint = if (state.coreReady ||
+                                                    state.chatBubblesEnabled
+                                                ) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
                                             )
-                                            Text(
+                                            Column(
                                                 modifier = Modifier.weight(1f),
-                                                text = stringResource(R.string.chat_bubbles_setup_guidance),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                                            ) {
+                                                Text(
+                                                    text = stringResource(
+                                                        R.string.chat_bubbles_enable_title
+                                                    ),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                )
+                                                Text(
+                                                    text = stringResource(
+                                                        when {
+                                                            !state.coreReady -> {
+                                                                R.string.chat_bubbles_locked_description
+                                                            }
+                                                            state.chatBubblesEnabled -> {
+                                                                R.string.chat_bubbles_enabled_description
+                                                            }
+                                                            else -> {
+                                                                R.string.chat_bubbles_disabled_description
+                                                            }
+                                                        }
+                                                    ),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            Switch(
+                                                checked = state.chatBubblesEnabled,
+                                                enabled = state.coreReady ||
+                                                        state.chatBubblesEnabled,
+                                                onCheckedChange = null,
                                             )
                                         }
                                     }
+                                    if (state.chatBubblesEnabled) {
+                                        Surface(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(18.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(16.dp),
+                                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                                            ) {
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                                    verticalAlignment = Alignment.Top,
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (
+                                                            state.chatBubblesSystemAllowed
+                                                        ) {
+                                                            Icons.Rounded.CheckCircle
+                                                        } else {
+                                                            Icons.Rounded.Info
+                                                        },
+                                                        contentDescription = null,
+                                                        tint = if (
+                                                            state.chatBubblesSystemAllowed
+                                                        ) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.tertiary
+                                                        },
+                                                    )
+                                                    Column(
+                                                        modifier = Modifier.weight(1f),
+                                                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                                                    ) {
+                                                        Text(
+                                                            text = stringResource(
+                                                                R.string.chat_bubbles_system_title
+                                                            ),
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                        )
+                                                        Text(
+                                                            text = stringResource(
+                                                                if (
+                                                                    state.chatBubblesSystemAllowed
+                                                                ) {
+                                                                    R.string.chat_bubbles_system_allowed_description
+                                                                } else {
+                                                                    R.string.chat_bubbles_system_required_description
+                                                                }
+                                                            ),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        )
+                                                    }
+                                                }
+                                                Button(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    onClick = onOpenChatBubbleSettings,
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Settings,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                    Spacer(Modifier.size(8.dp))
+                                                    Text(
+                                                        stringResource(
+                                                            R.string.action_open_chat_bubble_settings
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     if (state.bubbleTrampolineAvailable) {
-                                        val trampolineCanBeSet = state.coreReady &&
-                                                state.chatBubblesAllowed
+                                        val trampolineCanBeSet =
+                                            state.bubbleTrampolineCanBeSet
                                         Surface(
                                             modifier = Modifier.fillMaxWidth(),
                                             shape = RoundedCornerShape(18.dp),
@@ -1374,11 +1530,14 @@ private fun AdvancedSection(
                                                     Text(
                                                         text = stringResource(
                                                             when {
-                                                                !state.chatBubblesAllowed -> {
-                                                                    R.string.bubble_trampoline_bubbles_required_description
-                                                                }
                                                                 !state.coreReady -> {
                                                                     R.string.bubble_trampoline_locked_description
+                                                                }
+                                                                !state.chatBubblesEnabled -> {
+                                                                    R.string.bubble_trampoline_bubbles_required_description
+                                                                }
+                                                                !state.chatBubblesSystemAllowed -> {
+                                                                    R.string.bubble_trampoline_system_required_description
                                                                 }
                                                                 else -> {
                                                                     R.string.bubble_trampoline_description
@@ -1396,18 +1555,6 @@ private fun AdvancedSection(
                                                 )
                                             }
                                         }
-                                    }
-                                    Button(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        onClick = onOpenChatBubbleSettings,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Settings,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                        Spacer(Modifier.size(8.dp))
-                                        Text(stringResource(R.string.action_open_chat_bubble_settings))
                                     }
                                 }
                             }
@@ -1454,17 +1601,27 @@ private fun AdvancedSection(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = stringResource(R.string.sync_removal_description),
+                            text = stringResource(
+                                if (state.syncRemovalPausedForBubbles) {
+                                    R.string.sync_removal_paused_description
+                                } else {
+                                    R.string.sync_removal_description
+                                },
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Text(
                         text = stringResource(
-                            if (state.syncRemovalReady) R.string.setup_status_ready else R.string.setup_status_needs_adb
+                            when {
+                                state.syncRemovalPausedForBubbles -> R.string.setup_status_paused
+                                state.syncRemovalReady -> R.string.setup_status_ready
+                                else -> R.string.setup_status_needs_adb
+                            },
                         ),
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (state.syncRemovalReady) {
+                        color = if (state.syncRemovalReady && !state.syncRemovalPausedForBubbles) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.tertiary
@@ -1500,6 +1657,13 @@ private fun AdvancedSection(
                                 title = stringResource(R.string.status_notification_service_debug_label),
                                 enabled = state.notificationServiceDebugEnabled,
                             )
+                            if (state.syncRemovalPausedForBubbles) {
+                                Text(
+                                    text = stringResource(R.string.sync_removal_trampoline_note),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(18.dp),

@@ -15,8 +15,9 @@ notifications with the notification features available on modern Android.
   time on supported Android versions.
 - Keeps rewritten notifications in sync when WeChat removes the originals, with
   optional synchronous removal for the cases Android does not expose normally.
-- Publishes the three most recent conversations as launcher shortcuts. Tapping
-  an optional app-icon action opens WeChat, while the final shortcut opens WeModern settings.
+- Publishes up to three recent conversations and reserves the fourth and final
+  visible launcher shortcut for WeModern settings. Tapping an optional app-icon
+  action opens WeChat.
 - Includes a guided Material You setup screen, themed launcher icon, Simplified
   and Traditional Chinese translations, and built-in test notifications.
 
@@ -34,10 +35,12 @@ activity is embedded, resizable, supports multiple document instances, and
 restores its message snapshot after process recreation. The normal conversation
 action uses WeChat's original notification `PendingIntent`; the experimental
 Bubble trampoline uses a mutable launcher `PendingIntent` so WeChat Home is the
-bubble task root from the beginning. Whether bubbles are disabled, selected per
-conversation, or allowed for every conversation remains under Android's
-notification settings. On Android 8 and 9, rewritten messages continue to work
-as normal notifications without bubble metadata.
+bubble task root from the beginning. WeModern's own Chat bubbles switch controls
+whether rewritten notifications include bubble metadata; Android separately
+controls whether all or only selected conversations may bubble. When the
+WeModern switch is off, notifications remain standard and do not offer a bubble
+action. On Android 8 and 9, rewritten messages continue to work as normal
+notifications without bubble metadata.
 
 ## Credits
 
@@ -79,10 +82,11 @@ After installing the APK, enable notification listener access for `WeModern` and
 adb shell cmd appops set me.jaspr.wemodern RECEIVE_SENSITIVE_NOTIFICATIONS allow
 ```
 
-To use chat bubbles on Android 10 or later, open **Chat bubbles** in WeModern's
-setup screen and choose the desired Android bubble preference. Android may also
-let you promote an individual conversation from its notification. Disabling
-bubbles does not disable rewritten notifications.
+To use chat bubbles on Android 10 or later, open **Chat bubbles** under
+**Advanced**, enable the WeModern feature switch, then allow all or selected
+conversations in Android's bubble settings. Disabling the WeModern switch
+removes bubble metadata from current and future rewritten messages without
+disabling normal notifications.
 
 To enable synchronous removal of rewritten WeChat notifications when WeChat
 cancels its original notification, also grant log access and enable debug
@@ -96,4 +100,4 @@ adb reboot
 
 ## Launcher Behavior
 
-Tapping the WeModern app icon opens WeModern settings by default. After notification access and notification permission are enabled, **Open WeChat from icon** can be turned on under **Advanced**. Touch and hold the icon to open one of the three most recent WeChat conversations or select **Settings**, which is always the final shortcut, to open the WeModern setup screen.
+Tapping the WeModern app icon opens WeModern settings by default. After notification access and notification permission are enabled, **Open WeChat from icon** can be turned on under **Advanced**. Touch and hold the icon to open one of the three most recent WeChat conversations or select **Settings**, which is always the fourth and final visible shortcut, to open the WeModern setup screen. The Android shortcut publishing limit can be higher than the number rendered by a launcher, so WeModern caps the visible list at four instead of allowing hidden contacts to push Settings out of Pixel Launcher's menu.

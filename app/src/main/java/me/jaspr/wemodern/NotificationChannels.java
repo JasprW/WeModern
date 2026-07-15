@@ -32,7 +32,7 @@ final class NotificationChannels {
         messages.setDescription(context.getString(R.string.channel_wechat_messages_description));
         messages.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, audio);
         messages.enableVibration(true);
-        if (Build.VERSION.SDK_INT >= 29 && Build.VERSION.SDK_INT <= 30) {
+        if (Build.VERSION.SDK_INT == 29) {
             messages.setAllowBubbles(true);
         }
         NotificationChannel status = new NotificationChannel(

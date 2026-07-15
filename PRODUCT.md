@@ -27,7 +27,7 @@ Avoid dense developer dashboards, giant repeated cards, disabled controls used a
 3. Separate required setup, recommended reliability improvements, and advanced ADB features.
 4. Show each fact once; completed steps become compact status rows, not disabled buttons.
 5. Keep testing available but visually secondary to setup and health.
-6. Treat Android's None, Selected, and All bubble preferences as authoritative; normal notifications must remain useful when bubbles are unavailable or disabled.
+6. Keep WeModern's Chat bubbles feature switch distinct from Android's None, Selected, and All bubble permissions. Both must be ready before dependent options are enabled, and normal notifications must remain useful when either layer is off.
 
 ## Accessibility & Inclusion
 

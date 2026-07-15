@@ -2,18 +2,21 @@ package me.jaspr.wemodern;
 
 import android.annotation.TargetApi;
 import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
+import android.service.notification.StatusBarNotification;
 import android.util.Log;
 
 final class ConversationBubbles {
     private static final String TAG = "WeModern";
     private static final int MIN_BUBBLE_SDK = 29;
     private static final int REQUEST_CODE_NAMESPACE = 0x42000000;
+    private static final int DISMISS_REQUEST_CODE_NAMESPACE = 0x43000000;
 
     private ConversationBubbles() {
     }
@@ -33,14 +36,100 @@ final class ConversationBubbles {
         return PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE;
     }
 
+    static int dismissRequestCodeFor(String conversationId) {
+        int hash = conversationId == null ? 0 : conversationId.hashCode();
+        return DISMISS_REQUEST_CODE_NAMESPACE ^ hash;
+    }
+
+    static int dismissPendingIntentFlags() {
+        return PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+    }
+
     static void applyTo(
             Context context,
             Notification.Builder builder,
             ConversationBubbleState state,
-            Icon icon
+            Icon icon,
+            int notificationId
     ) {
-        if (!isSupported(Build.VERSION.SDK_INT) || state == null || icon == null) return;
-        Api29Impl.applyTo(context, builder, state, icon);
+        if (!shouldApply(
+                Build.VERSION.SDK_INT,
+                ChatBubbleBehavior.isEnabled(context),
+                state != null,
+                icon != null
+        )) return;
+        Api29Impl.applyTo(context, builder, state, icon, notificationId);
+    }
+
+    static boolean shouldApply(
+            int sdkInt,
+            boolean enabled,
+            boolean hasState,
+            boolean hasIcon
+    ) {
+        return isSupported(sdkInt) && enabled && hasState && hasIcon;
+    }
+
+    @TargetApi(29)
+    static void syncActiveNotifications(Context context) {
+        if (!isSupported(Build.VERSION.SDK_INT)) return;
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        boolean enabled = ChatBubbleBehavior.isEnabled(context);
+        StatusBarNotification[] active = manager.getActiveNotifications();
+        if (active == null) return;
+        for (StatusBarNotification sbn : active) {
+            Notification notification = sbn.getNotification();
+            if (!NotificationChannels.WECHAT_MESSAGES.equals(notification.getChannelId())) continue;
+
+            String conversationId = notification.getShortcutId();
+            ConversationBubbleState state = ConversationBubbleStore.get(conversationId);
+            Icon icon = notification.getLargeIcon();
+            Notification.BubbleMetadata currentBubble = notification.getBubbleMetadata();
+            if (icon == null && currentBubble != null) icon = currentBubble.getIcon();
+            if (icon == null) {
+                icon = Icon.createWithResource(context, R.mipmap.ic_launcher);
+            }
+            boolean hasBubble = currentBubble != null;
+            if (!shouldUpdateActiveNotification(
+                    enabled,
+                    conversationId,
+                    state != null,
+                    icon != null,
+                    hasBubble
+            )) continue;
+
+            try {
+                Notification.Builder builder = Notification.Builder.recoverBuilder(
+                        context,
+                        notification
+                );
+                if (enabled) {
+                    applyTo(context, builder, state, icon, sbn.getId());
+                } else {
+                    builder.setBubbleMetadata(null);
+                }
+                manager.notify(sbn.getTag(), sbn.getId(), builder.build());
+            } catch (RuntimeException e) {
+                Log.w(TAG, "failed to update active bubble metadata"
+                        + ", id=" + sbn.getId()
+                        + ", conversation=" + conversationId
+                        + ", enabled=" + enabled, e);
+            }
+        }
+    }
+
+    static boolean shouldUpdateActiveNotification(
+            boolean enabled,
+            String conversationId,
+            boolean hasState,
+            boolean hasIcon,
+            boolean hasBubble
+    ) {
+        if (conversationId == null || conversationId.isEmpty()) return false;
+        // Rebuild existing metadata as well: its PendingIntent captures whether the
+        // experimental WeChat trampoline was enabled when the notification was posted.
+        return enabled ? hasState && hasIcon : hasBubble;
     }
 
     @TargetApi(29)
@@ -52,7 +141,8 @@ final class ConversationBubbles {
                 Context context,
                 Notification.Builder builder,
                 ConversationBubbleState state,
-                Icon icon
+                Icon icon,
+                int notificationId
         ) {
             Intent target = new Intent(context, BubbleConversationActivity.class)
                     .setAction(Intent.ACTION_VIEW)
@@ -63,6 +153,7 @@ final class ConversationBubbles {
                             .build());
             state.writeTo(target);
             PendingIntent bubbleIntent = createBubbleIntent(context, state, target);
+            PendingIntent deleteIntent = createDeleteIntent(context, state, notificationId);
             Notification.BubbleMetadata.Builder metadataBuilder;
             if (Build.VERSION.SDK_INT >= 30) {
                 metadataBuilder = Api30Impl.newBuilder(bubbleIntent, icon);
@@ -73,11 +164,34 @@ final class ConversationBubbles {
                         .setIcon(icon);
             }
             Notification.BubbleMetadata metadata = metadataBuilder
+                    .setDeleteIntent(deleteIntent)
                     .setDesiredHeightResId(R.dimen.conversation_bubble_desired_height)
                     .setAutoExpandBubble(false)
                     .setSuppressNotification(false)
                     .build();
             builder.setBubbleMetadata(metadata);
+        }
+
+        private static PendingIntent createDeleteIntent(
+                Context context,
+                ConversationBubbleState state,
+                int notificationId
+        ) {
+            Intent intent = new Intent(context, BubbleDismissReceiver.class)
+                    .setAction(BubbleDismissReceiver.ACTION_DISMISS)
+                    .setData(new Uri.Builder()
+                            .scheme("wemodern")
+                            .authority("bubble-dismiss")
+                            .appendPath(state.conversationId)
+                            .build())
+                    .putExtra(BubbleDismissReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+                    .putExtra(BubbleDismissReceiver.EXTRA_CONVERSATION_ID, state.conversationId);
+            return PendingIntent.getBroadcast(
+                    context,
+                    dismissRequestCodeFor(state.conversationId),
+                    intent,
+                    dismissPendingIntentFlags()
+            );
         }
 
         private static PendingIntent createBubbleIntent(
