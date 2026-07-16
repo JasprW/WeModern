@@ -434,7 +434,7 @@ class MainActivity : ComponentActivity() {
             contentIntent,
         )
         ConversationBubbleStore.update(bubbleState)
-        val builder = Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
+        val builder = Notification.Builder(this, NotificationChannels.messageChannelId(this))
             .setSmallIcon(smallIcon)
             .setLargeIcon(senderAvatar)
             .setContentTitle(getString(R.string.test_message_sender))
@@ -456,8 +456,26 @@ class MainActivity : ComponentActivity() {
             MessageTestNotifications.CURRENT_ID,
         )
         val notification = builder.build()
-        getSystemService(NotificationManager::class.java)
-            .notify(MessageTestNotifications.CURRENT_ID, notification)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        val trampolineHostPosted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            TrampolineBubbleHost.update(
+                this,
+                notification,
+                MessageTestNotifications.SHORTCUT_ID,
+                getString(R.string.test_message_sender),
+                senderAvatar,
+            )
+        } else {
+            false
+        }
+        if (MessageTestNotifications.shouldPostSourceNotification(trampolineHostPosted)) {
+            notificationManager.notify(MessageTestNotifications.CURRENT_ID, notification)
+        } else {
+            // The fixed host already contains the complete test message. Keeping ID 100 as a
+            // second notification would leave a status-bar entry after the bubble is opened,
+            // because unlike a real WeChat replacement it has no source-app cancel event.
+            notificationManager.cancel(MessageTestNotifications.CURRENT_ID)
+        }
         MessageTestNotifications.retainAsCachedConversationShortcut(this)
     }
 
@@ -545,9 +563,6 @@ private data class SetupState(
 
     val syncRemovalReady: Boolean
         get() = readLogsGranted && notificationServiceDebugEnabled
-
-    val syncRemovalPausedForBubbles: Boolean
-        get() = syncRemovalReady && bubbleTrampolineEnabled
 }
 
 private enum class RequiredSetupStep {
@@ -772,7 +787,7 @@ private fun SetupHero(
         shape = RoundedCornerShape(
             topStart = 32.dp,
             topEnd = 32.dp,
-            bottomEnd = 12.dp,
+            bottomEnd = 32.dp,
             bottomStart = 32.dp,
         ),
         color = containerColor,
@@ -1601,27 +1616,21 @@ private fun AdvancedSection(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = stringResource(
-                                if (state.syncRemovalPausedForBubbles) {
-                                    R.string.sync_removal_paused_description
-                                } else {
-                                    R.string.sync_removal_description
-                                },
-                            ),
+                            text = stringResource(R.string.sync_removal_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Text(
                         text = stringResource(
-                            when {
-                                state.syncRemovalPausedForBubbles -> R.string.setup_status_paused
-                                state.syncRemovalReady -> R.string.setup_status_ready
-                                else -> R.string.setup_status_needs_adb
+                            if (state.syncRemovalReady) {
+                                R.string.setup_status_ready
+                            } else {
+                                R.string.setup_status_needs_adb
                             },
                         ),
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (state.syncRemovalReady && !state.syncRemovalPausedForBubbles) {
+                        color = if (state.syncRemovalReady) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.tertiary
@@ -1657,13 +1666,6 @@ private fun AdvancedSection(
                                 title = stringResource(R.string.status_notification_service_debug_label),
                                 enabled = state.notificationServiceDebugEnabled,
                             )
-                            if (state.syncRemovalPausedForBubbles) {
-                                Text(
-                                    text = stringResource(R.string.sync_removal_trampoline_note),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.tertiary,
-                                )
-                            }
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(18.dp),

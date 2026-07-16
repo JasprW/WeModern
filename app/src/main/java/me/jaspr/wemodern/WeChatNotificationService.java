@@ -36,6 +36,9 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final long ORIGINAL_SNOOZE_DURATION_MS = 24L * 60L * 60L * 1000L;
     private static final int MAX_HISTORY = 8;
     private static final int MESSAGE_GROUP_SUMMARY_ID = 0x5747534d;
+    private static final int REASON_LISTENER_CANCEL = 10;
+    private static final NotificationPostDeduplicator POST_DEDUPLICATOR =
+            new NotificationPostDeduplicator();
     private final Map<String, ArrayDeque<Message>> histories = new HashMap<>();
     private final Map<String, String> originalToConversation = new HashMap<>();
     private final Map<CancelEventKey, ReplacementRecord> replacementsByCancelEvent = new HashMap<>();
@@ -121,6 +124,11 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
         if (!WECHAT_PACKAGE.equals(sbn.getPackageName())) return;
         String key = sbn.getKey();
+        if (reason == REASON_LISTENER_CANCEL) {
+            selfHiddenOriginals.remove(key);
+            Log.d(TAG, "wechat hidden by notification listener: key=" + key);
+            return;
+        }
         if (selfHiddenOriginals.remove(key)) {
             Log.d(TAG, "wechat hidden by self: key=" + key + ", reason=" + reasonName(reason));
             return;
@@ -133,13 +141,6 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
         String conversationKey = originalToConversation.get(key);
         if (conversationKey != null) {
-            if (shouldPreserveMessageReplacement(conversationKey)) {
-                Log.i(TAG, "preserve bubble host after original removal"
-                        + ", key=" + key
-                        + ", conversation=" + conversationKey
-                        + ", reason=" + reasonName(reason));
-                return;
-            }
             originalToConversation.remove(key);
             histories.remove(conversationKey);
             ConversationBubbleStore.remove(conversationKey);
@@ -177,14 +178,6 @@ public class WeChatNotificationService extends NotificationListenerService {
                     + ", conversation=" + replacement.conversationKey);
         }
 
-        if (shouldPreserveMessageReplacement(replacement.conversationKey)) {
-            Log.i(TAG, "preserve bubble host after app cancel log"
-                    + ", key=" + replacement.originalKey
-                    + ", conversation=" + replacement.conversationKey
-                    + ", reason=" + reasonName(reason));
-            return;
-        }
-
         replacementsByCancelEvent.remove(eventKey);
         removePersistedReplacement(eventKey);
         originalToConversation.remove(replacement.originalKey);
@@ -201,6 +194,12 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private void handleWeChatNotification(StatusBarNotification sbn, boolean fromActiveScan) {
         Notification original = sbn.getNotification();
+        if (!POST_DEDUPLICATOR.shouldProcess(sbn.getKey(), sbn.getPostTime(), original.when)) {
+            Log.d(TAG, "skip duplicate wechat callback: key=" + sbn.getKey()
+                    + ", postTime=" + sbn.getPostTime()
+                    + ", when=" + original.when);
+            return;
+        }
         ParsedVoipNotification voip = WeChatParser.parseVoip(this, sbn);
         if (voip != null) {
             int replacementId = voipReplacementId(sbn);
@@ -222,6 +221,12 @@ public class WeChatNotificationService extends NotificationListenerService {
                     + ", flags=" + original.flags);
             return;
         }
+        originalToConversation.put(sbn.getKey(), parsed.conversationKey);
+        rememberReplacement(sbn, parsed.conversationKey, stableId(parsed.conversationKey));
+        // Remove the original as early as possible so its high-importance heads-up surface
+        // has the smallest possible window before the quiet replacement and bubble are ready.
+        hideOriginal(sbn);
+
         ArrayDeque<Message> history = histories.computeIfAbsent(parsed.conversationKey, key -> new ArrayDeque<>());
         Icon originalSenderIcon = resolveSenderIcon(original);
         Icon circularSenderIcon = ConversationShortcuts.circleAvatarIcon(this, originalSenderIcon);
@@ -231,8 +236,6 @@ public class WeChatNotificationService extends NotificationListenerService {
             while (history.size() > MAX_HISTORY) history.removeFirst();
         }
 
-        originalToConversation.put(sbn.getKey(), parsed.conversationKey);
-        rememberReplacement(sbn, parsed.conversationKey, stableId(parsed.conversationKey));
         ConversationShortcuts.publish(this, parsed.conversationKey, parsed.title, originalSenderIcon,
                 original.contentIntent);
         ConversationBubbleState bubbleState = ConversationBubbleStore.get(parsed.conversationKey);
@@ -252,8 +255,15 @@ public class WeChatNotificationService extends NotificationListenerService {
                 original.contentIntent
         );
         ConversationBubbleStore.update(bubbleState);
-        postReplacement(sbn, parsed, history, original, circularSenderIcon, bubbleState);
-        hideOriginal(sbn);
+        postReplacement(
+                sbn,
+                parsed,
+                history,
+                original,
+                circularSenderIcon,
+                originalSenderIcon,
+                bubbleState
+        );
         hideDuplicateOriginals(parsed, sbn.getKey());
         Log.i(TAG, "rewritten wechat notification"
                 + ", fromActiveScan=" + fromActiveScan
@@ -265,12 +275,14 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private void postReplacement(StatusBarNotification sbn, ParsedNotification parsed,
                                  ArrayDeque<Message> history, Notification original,
-                                 Icon senderIcon, ConversationBubbleState bubbleState) {
+                                 Icon senderIcon, Icon originalSenderIcon,
+                                 ConversationBubbleState bubbleState) {
         CharSequence contentText = parsed.groupConversation
                 ? parsed.sender + ": " + parsed.text
                 : parsed.text;
         Icon smallIcon = resolveSmallIcon(original);
-        Notification.Builder builder = new Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
+        String messageChannelId = NotificationChannels.messageChannelId(this);
+        Notification.Builder builder = new Notification.Builder(this, messageChannelId)
                 .setSmallIcon(smallIcon)
                 .setContentTitle(parsed.title)
                 .setContentText(contentText)
@@ -310,12 +322,14 @@ public class WeChatNotificationService extends NotificationListenerService {
         );
 
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        Notification replacementNotification;
         try {
             Log.i(TAG, "post replacement notification"
                     + ", replacementId=" + stableId(parsed.conversationKey)
                     + ", conversation=" + parsed.conversationKey
                     + ", originalKey=" + sbn.getKey());
-            nm.notify(stableId(parsed.conversationKey), builder.build());
+            replacementNotification = builder.build();
+            nm.notify(stableId(parsed.conversationKey), replacementNotification);
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to post with original icons, falling back", e);
             smallIcon = Icon.createWithResource(this, R.drawable.ic_wechat_notification_small);
@@ -326,17 +340,29 @@ public class WeChatNotificationService extends NotificationListenerService {
                     + ", replacementId=" + stableId(parsed.conversationKey)
                     + ", conversation=" + parsed.conversationKey
                     + ", originalKey=" + sbn.getKey());
-            nm.notify(stableId(parsed.conversationKey), builder.build());
+            replacementNotification = builder.build();
+            nm.notify(stableId(parsed.conversationKey), replacementNotification);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            TrampolineBubbleHost.update(
+                    this,
+                    replacementNotification,
+                    parsed.conversationKey,
+                    parsed.title,
+                    originalSenderIcon != null ? originalSenderIcon : bubbleIcon
+            );
         }
         if (histories.size() >= 2) {
-            postMessageGroupSummary(contentIntent, smallIcon);
-        } else {
-            nm.cancel(MESSAGE_GROUP_SUMMARY_ID);
+            postMessageGroupSummary(contentIntent, smallIcon, messageChannelId);
         }
     }
 
-    private void postMessageGroupSummary(PendingIntent contentIntent, Icon smallIcon) {
-        Notification.Builder builder = new Notification.Builder(this, NotificationChannels.WECHAT_MESSAGES)
+    private void postMessageGroupSummary(
+            PendingIntent contentIntent,
+            Icon smallIcon,
+            String messageChannelId
+    ) {
+        Notification.Builder builder = new Notification.Builder(this, messageChannelId)
                 .setSmallIcon(smallIcon)
                 .setContentTitle(getString(R.string.channel_wechat_messages))
                 .setContentText(getString(R.string.app_name))
@@ -420,22 +446,20 @@ public class WeChatNotificationService extends NotificationListenerService {
     private void cleanupOrphanedReplacement(StatusBarNotification sbn) {
         if (!getPackageName().equals(sbn.getPackageName())) return;
         String channel = channelId(sbn.getNotification());
-        if (!NotificationChannels.WECHAT_MESSAGES.equals(channel)
+        if (!NotificationChannels.isMessageChannel(channel)
                 && !NotificationChannels.WECHAT_CALLS.equals(channel)) {
             return;
         }
-        if (isMessageGroupSummary(sbn.getNotification())) {
-            return;
-        }
-        if (isTestNotificationId(sbn.getId())) {
-            Log.d(TAG, "keep test notification"
-                    + ", id=" + sbn.getId()
-                    + ", channel=" + channel
-                    + ", key=" + sbn.getKey());
-            return;
-        }
-        if (hasPersistedReplacement(sbn.getId())) {
-            Log.d(TAG, "keep tracked replacement notification"
+        boolean groupSummary = isMessageGroupSummary(sbn.getNotification());
+        boolean testNotification = isTestNotificationId(sbn.getId());
+        boolean persistedReplacement = hasPersistedReplacement(sbn.getId());
+        if (shouldKeepSelfNotification(
+                sbn.getId(),
+                groupSummary,
+                testNotification,
+                persistedReplacement
+        )) {
+            Log.d(TAG, "keep owned notification"
                     + ", id=" + sbn.getId()
                     + ", channel=" + channel
                     + ", key=" + sbn.getKey());
@@ -450,6 +474,18 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     static boolean isTestNotificationId(int id) {
         return MessageTestNotifications.isTestId(id) || CallTestNotifications.isTestId(id);
+    }
+
+    static boolean shouldKeepSelfNotification(
+            int notificationId,
+            boolean groupSummary,
+            boolean testNotification,
+            boolean persistedReplacement
+    ) {
+        return TrampolineBubbleHost.isHostNotificationId(notificationId)
+                || groupSummary
+                || testNotification
+                || persistedReplacement;
     }
 
     private static boolean isMessageGroupSummary(Notification notification) {
@@ -470,24 +506,21 @@ public class WeChatNotificationService extends NotificationListenerService {
                 if (getPackageName().equals(sbn.getPackageName())
                         && isMessageGroupChild(sbn.getNotification())) {
                     childCount++;
-                    if (childCount >= 2) return;
                 }
             }
         }
+        if (!shouldRemoveMessageGroupSummary(childCount)) return;
         ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
                 .cancel(MESSAGE_GROUP_SUMMARY_ID);
+    }
+
+    static boolean shouldRemoveMessageGroupSummary(int childCount) {
+        return childCount == 0;
     }
 
     private void forgetReplacement(CancelEventKey eventKey) {
         replacementsByCancelEvent.remove(eventKey);
         removePersistedReplacement(eventKey);
-    }
-
-    private boolean shouldPreserveMessageReplacement(String conversationKey) {
-        return BubbleTrampolineBehavior.shouldPreserveMessageReplacement(
-                BubbleTrampolineBehavior.isEnabled(this),
-                !TextUtils.isEmpty(conversationKey)
-        );
     }
 
     private void forgetReplacementsForReplacementId(int replacementId) {
@@ -673,7 +706,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (reason == NotificationListenerService.REASON_CANCEL) return "cancel";
         if (reason == NotificationListenerService.REASON_APP_CANCEL) return "app_cancel";
         if (reason == NotificationListenerService.REASON_APP_CANCEL_ALL) return "app_cancel_all";
-        if (reason == 10) return "listener_cancel";
+        if (reason == REASON_LISTENER_CANCEL) return "listener_cancel";
         return String.valueOf(reason);
     }
 

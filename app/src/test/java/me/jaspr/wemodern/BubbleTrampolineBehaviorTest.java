@@ -29,8 +29,8 @@ public class BubbleTrampolineBehaviorTest {
     }
 
     @Test
-    public void enabledTrampolinePreservesMessageBubbleHostNotification() {
-        assertTrue(BubbleTrampolineBehavior.shouldPreserveMessageReplacement(true, true));
+    public void dedicatedHostLetsMessageReplacementsSynchronizeNormally() {
+        assertFalse(BubbleTrampolineBehavior.shouldPreserveMessageReplacement(true, true));
         assertFalse(BubbleTrampolineBehavior.shouldPreserveMessageReplacement(false, true));
         assertFalse(BubbleTrampolineBehavior.shouldPreserveMessageReplacement(true, false));
     }

@@ -57,10 +57,21 @@ public class ConversationBubblesTest {
 
     @Test
     public void bubbleMetadataRequiresTheLocalFeatureSwitch() {
-        assertFalse(ConversationBubbles.shouldApply(37, false, true, true));
-        assertTrue(ConversationBubbles.shouldApply(37, true, true, true));
-        assertFalse(ConversationBubbles.shouldApply(37, true, false, true));
-        assertFalse(ConversationBubbles.shouldApply(37, true, true, false));
+        assertFalse(ConversationBubbles.shouldApply(37, false, false, true, true));
+        assertTrue(ConversationBubbles.shouldApply(37, true, false, true, true));
+        assertFalse(ConversationBubbles.shouldApply(37, true, false, false, true));
+        assertFalse(ConversationBubbles.shouldApply(37, true, false, true, false));
+    }
+
+    @Test
+    public void trampolineUsesOnlyTheDedicatedHostBubble() {
+        assertFalse(ConversationBubbles.shouldApply(37, true, true, true, true));
+    }
+
+    @Test
+    public void bubbleNotificationsStayCollapsedAndExposeTheirNotification() {
+        assertFalse(ConversationBubbles.shouldAutoExpand());
+        assertFalse(ConversationBubbles.shouldSuppressNotification());
     }
 
     @Test

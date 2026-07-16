@@ -45,6 +45,14 @@ final class ConversationBubbles {
         return PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
     }
 
+    static boolean shouldAutoExpand() {
+        return false;
+    }
+
+    static boolean shouldSuppressNotification() {
+        return false;
+    }
+
     static void applyTo(
             Context context,
             Notification.Builder builder,
@@ -55,6 +63,7 @@ final class ConversationBubbles {
         if (!shouldApply(
                 Build.VERSION.SDK_INT,
                 ChatBubbleBehavior.isEnabled(context),
+                BubbleTrampolineBehavior.isEnabled(context),
                 state != null,
                 icon != null
         )) return;
@@ -64,10 +73,15 @@ final class ConversationBubbles {
     static boolean shouldApply(
             int sdkInt,
             boolean enabled,
+            boolean trampolineEnabled,
             boolean hasState,
             boolean hasIcon
     ) {
-        return isSupported(sdkInt) && enabled && hasState && hasIcon;
+        return isSupported(sdkInt)
+                && enabled
+                && !trampolineEnabled
+                && hasState
+                && hasIcon;
     }
 
     @TargetApi(29)
@@ -76,11 +90,19 @@ final class ConversationBubbles {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
         boolean enabled = ChatBubbleBehavior.isEnabled(context);
+        boolean trampolineEnabled = enabled && BubbleTrampolineBehavior.isEnabled(context);
+        if (!trampolineEnabled) {
+            TrampolineBubbleHost.clear(context);
+        }
         StatusBarNotification[] active = manager.getActiveNotifications();
         if (active == null) return;
+
+        StatusBarNotification newestTrampolineSource = null;
+        long newestTrampolinePostTime = Long.MIN_VALUE;
         for (StatusBarNotification sbn : active) {
             Notification notification = sbn.getNotification();
-            if (!NotificationChannels.WECHAT_MESSAGES.equals(notification.getChannelId())) continue;
+            if (!NotificationChannels.isMessageChannel(notification.getChannelId())) continue;
+            if (TrampolineBubbleHost.isHostNotificationId(sbn.getId())) continue;
 
             String conversationId = notification.getShortcutId();
             ConversationBubbleState state = ConversationBubbleStore.get(conversationId);
@@ -91,6 +113,27 @@ final class ConversationBubbles {
                 icon = Icon.createWithResource(context, R.mipmap.ic_launcher);
             }
             boolean hasBubble = currentBubble != null;
+            boolean groupSummary = (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
+
+            if (trampolineEnabled) {
+                if (TrampolineBubbleHost.isEligibleSource(
+                        notification.getChannelId(),
+                        sbn.getId(),
+                        conversationId,
+                        groupSummary
+                ) && (newestTrampolineSource == null
+                        || TrampolineBubbleHost.isNewerSource(
+                                sbn.getPostTime(),
+                                newestTrampolinePostTime))) {
+                    newestTrampolineSource = sbn;
+                    newestTrampolinePostTime = sbn.getPostTime();
+                }
+                if (!hasBubble) continue;
+                updateBubbleMetadata(
+                        context, manager, sbn, state, icon, conversationId, false);
+                continue;
+            }
+
             if (!shouldUpdateActiveNotification(
                     enabled,
                     conversationId,
@@ -98,24 +141,44 @@ final class ConversationBubbles {
                     icon != null,
                     hasBubble
             )) continue;
+            updateBubbleMetadata(
+                    context, manager, sbn, state, icon, conversationId, enabled);
+        }
 
-            try {
-                Notification.Builder builder = Notification.Builder.recoverBuilder(
-                        context,
-                        notification
-                );
-                if (enabled) {
-                    applyTo(context, builder, state, icon, sbn.getId());
-                } else {
-                    builder.setBubbleMetadata(null);
-                }
-                manager.notify(sbn.getTag(), sbn.getId(), builder.build());
-            } catch (RuntimeException e) {
-                Log.w(TAG, "failed to update active bubble metadata"
-                        + ", id=" + sbn.getId()
-                        + ", conversation=" + conversationId
-                        + ", enabled=" + enabled, e);
+        if (trampolineEnabled && newestTrampolineSource != null) {
+            TrampolineBubbleHost.syncFromActive(
+                    context,
+                    new StatusBarNotification[] {newestTrampolineSource}
+            );
+        }
+    }
+
+    @TargetApi(29)
+    private static void updateBubbleMetadata(
+            Context context,
+            NotificationManager manager,
+            StatusBarNotification sbn,
+            ConversationBubbleState state,
+            Icon icon,
+            String conversationId,
+            boolean enabled
+    ) {
+        try {
+            Notification.Builder builder = Notification.Builder.recoverBuilder(
+                    context,
+                    sbn.getNotification()
+            );
+            if (enabled) {
+                applyTo(context, builder, state, icon, sbn.getId());
+            } else {
+                builder.setBubbleMetadata(null);
             }
+            manager.notify(sbn.getTag(), sbn.getId(), builder.build());
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to update active bubble metadata"
+                    + ", id=" + sbn.getId()
+                    + ", conversation=" + conversationId
+                    + ", enabled=" + enabled, e);
         }
     }
 
@@ -152,7 +215,12 @@ final class ConversationBubbles {
                             .appendPath(state.conversationId)
                             .build());
             state.writeTo(target);
-            PendingIntent bubbleIntent = createBubbleIntent(context, state, target);
+            PendingIntent bubbleIntent = PendingIntent.getActivity(
+                    context,
+                    requestCodeFor(state.conversationId),
+                    target,
+                    pendingIntentFlags()
+            );
             PendingIntent deleteIntent = createDeleteIntent(context, state, notificationId);
             Notification.BubbleMetadata.Builder metadataBuilder;
             if (Build.VERSION.SDK_INT >= 30) {
@@ -166,8 +234,8 @@ final class ConversationBubbles {
             Notification.BubbleMetadata metadata = metadataBuilder
                     .setDeleteIntent(deleteIntent)
                     .setDesiredHeightResId(R.dimen.conversation_bubble_desired_height)
-                    .setAutoExpandBubble(false)
-                    .setSuppressNotification(false)
+                    .setAutoExpandBubble(shouldAutoExpand())
+                    .setSuppressNotification(shouldSuppressNotification())
                     .build();
             builder.setBubbleMetadata(metadata);
         }
@@ -194,35 +262,6 @@ final class ConversationBubbles {
             );
         }
 
-        private static PendingIntent createBubbleIntent(
-                Context context,
-                ConversationBubbleState state,
-                Intent fallbackTarget
-        ) {
-            boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
-            if (trampolineEnabled) {
-                Intent weChatTarget = WeChatLauncher.createBubbleRootIntent(context);
-                if (weChatTarget != null) {
-                    Log.i(TAG, "using mutable WeChat bubble root"
-                            + ", conversation=" + state.conversationId
-                            + ", component=" + weChatTarget.getComponent());
-                    return PendingIntent.getActivity(
-                            context,
-                            requestCodeFor(state.conversationId),
-                            weChatTarget,
-                            pendingIntentFlags()
-                    );
-                }
-                Log.w(TAG, "WeChat launcher unavailable; using WeModern bubble"
-                        + ", conversation=" + state.conversationId);
-            }
-            return PendingIntent.getActivity(
-                    context,
-                    requestCodeFor(state.conversationId),
-                    fallbackTarget,
-                    pendingIntentFlags()
-            );
-        }
     }
 
     @TargetApi(30)

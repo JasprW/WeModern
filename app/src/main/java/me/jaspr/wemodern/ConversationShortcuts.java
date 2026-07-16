@@ -142,6 +142,18 @@ final class ConversationShortcuts {
         }
     }
 
+    static Icon adaptiveBubbleIcon(Context context, Icon source) {
+        if (source == null) return null;
+        try {
+            Drawable drawable = source.loadDrawable(context);
+            Bitmap bitmap = renderAdaptiveIconDrawable(drawable);
+            return bitmap == null ? source : Icon.createWithAdaptiveBitmap(bitmap);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to create adaptive bubble avatar", e);
+            return source;
+        }
+    }
+
     static void refreshIcons(Context context) {
         migrateLegacyShortcutIcons(context);
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);

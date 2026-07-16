@@ -28,7 +28,7 @@
     <string name="bubble_open_wechat_home">Open WeChat in bubble</string>
     <string name="bubble_no_messages">No recent messages</string>
     <string name="bubble_trampoline_title">Bubble trampoline (Experimental)</string>
-    <string name="bubble_trampoline_description">Open WeChat Home directly inside each bubble; pauses message Synchronous removal</string>
+    <string name="bubble_trampoline_description">Keep one bubble for the latest conversation and open WeChat Home inside it</string>
     <string name="bubble_trampoline_locked_description">Finish required notification setup to enable</string>
     <string name="bubble_trampoline_bubbles_required_description">Turn on Chat bubbles to configure</string>
     <string name="bubble_trampoline_system_required_description">Allow bubbles in Android settings first</string>
@@ -58,12 +58,9 @@
     <string name="setup_status_requires_notifications">Notifications first</string>
     <string name="setup_status_needs_adb">ADB needed</string>
     <string name="setup_status_ready">Ready</string>
-    <string name="setup_status_paused">Paused</string>
     <string name="setup_status_missing">Off</string>
     <string name="sync_removal_title">Synchronous removal</string>
     <string name="sync_removal_description">Remove rewritten notifications immediately · Optional</string>
-    <string name="sync_removal_paused_description">Message removal paused while Bubble trampoline is on</string>
-    <string name="sync_removal_trampoline_note">A bubble task depends on its notification. Message synchronization is paused so Android does not close WeChat as it opens in the bubble. Calls are unaffected.</string>
     <string name="sync_commands">adb shell pm grant %1$s android.permission.READ_LOGS\nadb shell setprop persist.log.tag.NotificationService DEBUG\nadb reboot</string>
     <string name="sync_commands_clip_label">WeModern ADB setup</string>
     <string name="action_expand">Show details</string>
@@ -125,6 +122,10 @@
     <string name="wechat_call_in_progress">Call in progress</string>
     <string name="channel_wechat_messages">WeChat messages</string>
     <string name="channel_wechat_messages_description">Rewritten WeChat message notifications</string>
+    <string name="channel_wechat_bubble_messages">WeChat bubble messages</string>
+    <string name="channel_wechat_bubble_messages_description">Quiet message notifications while bubbles are enabled</string>
+    <string name="channel_wechat_bubble_host">WeChat bubble previews</string>
+    <string name="channel_wechat_bubble_host_description">Silent visual previews for new bubble messages</string>
     <string name="channel_status">Status</string>
     <string name="channel_wechat_calls">WeChat calls</string>
     <string name="channel_wechat_calls_description">Live updates for WeChat calls</string>

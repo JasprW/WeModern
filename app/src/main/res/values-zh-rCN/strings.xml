@@ -28,7 +28,7 @@
     <string name="bubble_open_wechat_home">在气泡内打开微信</string>
     <string name="bubble_no_messages">暂无最近消息</string>
     <string name="bubble_trampoline_title">气泡跳板（实验功能）</string>
-    <string name="bubble_trampoline_description">在每个气泡内直接打开微信主页；会暂停消息的同步移除</string>
+    <string name="bubble_trampoline_description">只保留最新会话的一个气泡，并在其中直接打开微信主页</string>
     <string name="bubble_trampoline_locked_description">完成必要的通知设置后可开启</string>
     <string name="bubble_trampoline_bubbles_required_description">开启聊天气泡后可设置</string>
     <string name="bubble_trampoline_system_required_description">请先在 Android 设置中允许气泡</string>
@@ -57,12 +57,9 @@
     <string name="setup_status_requires_notifications">先开启通知</string>
     <string name="setup_status_needs_adb">需 ADB</string>
     <string name="setup_status_ready">已就绪</string>
-    <string name="setup_status_paused">已暂停</string>
     <string name="setup_status_missing">未开启</string>
     <string name="sync_removal_title">同步移除</string>
     <string name="sync_removal_description">微信撤回通知时立即同步清理 · 可选</string>
-    <string name="sync_removal_paused_description">气泡跳板开启时暂停消息同步移除</string>
-    <string name="sync_removal_trampoline_note">气泡任务依赖其宿主通知。为避免微信刚在气泡内打开就被 Android 关闭，消息同步移除会暂停；通话不受影响。</string>
     <string name="sync_commands">adb shell pm grant %1$s android.permission.READ_LOGS\nadb shell setprop persist.log.tag.NotificationService DEBUG\nadb reboot</string>
     <string name="sync_commands_clip_label">WeModern ADB 设置</string>
     <string name="action_expand">展开详情</string>
@@ -124,6 +121,10 @@
     <string name="wechat_call_in_progress">通话中</string>
     <string name="channel_wechat_messages">微信消息</string>
     <string name="channel_wechat_messages_description">改写后的微信消息通知</string>
+    <string name="channel_wechat_bubble_messages">微信气泡消息</string>
+    <string name="channel_wechat_bubble_messages_description">气泡启用时使用的低打扰消息通知</string>
+    <string name="channel_wechat_bubble_host">微信气泡预览</string>
+    <string name="channel_wechat_bubble_host_description">新气泡消息的静音视觉预览</string>
     <string name="channel_status">状态</string>
     <string name="channel_wechat_calls">微信通话</string>
     <string name="channel_wechat_calls_description">微信通话 Live Update</string>

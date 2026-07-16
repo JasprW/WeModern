@@ -57,8 +57,8 @@ final class BubbleTrampolineBehavior {
             boolean enabled,
             boolean hasConversation
     ) {
-        // A notification bubble task is owned by its host notification. Removing the
-        // rewritten message while WeChat is starting tears down the task immediately.
-        return enabled && hasConversation;
+        // The trampoline task is owned by a dedicated host notification. Ordinary rewritten
+        // messages can therefore follow synchronous removal in every mode.
+        return false;
     }
 }

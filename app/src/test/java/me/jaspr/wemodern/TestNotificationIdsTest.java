@@ -18,4 +18,10 @@ public class TestNotificationIdsTest {
                 MessageTestNotifications.SHORTCUT_ID));
         assertFalse(MessageTestNotifications.isTestShortcutId("wemodern_settings"));
     }
+
+    @Test
+    public void messageTestSourceIsOmittedWhenTrampolineHostWasPosted() {
+        assertFalse(MessageTestNotifications.shouldPostSourceNotification(true));
+        assertTrue(MessageTestNotifications.shouldPostSourceNotification(false));
+    }
 }

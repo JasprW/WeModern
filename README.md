@@ -10,7 +10,8 @@ notifications with the notification features available on modern Android.
   links back to each chat.
 - Adds one native Android chat bubble per WeChat conversation on Android 10 and
   later. Each resizable bubble keeps recent messages visible. An experimental
-  option can instead open WeChat Home directly as the bubble content.
+  option instead keeps one bubble for the latest conversation and opens WeChat
+  Home directly as that bubble's content.
 - Turns ongoing WeChat voice and video calls into Live Updates with elapsed call
   time on supported Android versions.
 - Keeps rewritten notifications in sync when WeChat removes the originals, with
@@ -34,13 +35,22 @@ Android 17 treats bubbles as a windowing mode. WeModern's conversation bubble
 activity is embedded, resizable, supports multiple document instances, and
 restores its message snapshot after process recreation. The normal conversation
 action uses WeChat's original notification `PendingIntent`; the experimental
-Bubble trampoline uses a mutable launcher `PendingIntent` so WeChat Home is the
-bubble task root from the beginning. WeModern's own Chat bubbles switch controls
-whether rewritten notifications include bubble metadata; Android separately
-controls whether all or only selected conversations may bubble. When the
-WeModern switch is off, notifications remain standard and do not offer a bubble
-action. On Android 8 and 9, rewritten messages continue to work as normal
-notifications without bubble metadata.
+Bubble trampoline uses one dedicated, ungrouped host notification with a stable
+shortcut and mutable launcher `PendingIntent`, so WeChat Home is the bubble task
+root from the beginning. New messages update that same host to the latest
+conversation instead of creating competing WeChat tasks. Ordinary rewritten
+notifications remain independently removable, including when synchronous
+removal is enabled. When bubbles are ready, ordinary message notifications use
+a low-importance quiet channel, while the fixed Bubble host uses a separate
+silent visual-alert channel so SystemUI can show its message preview without a
+text heads-up, sound, or vibration. When bubbles are off or unavailable,
+messages return to the alerting channel.
+WeModern's own Chat bubbles switch controls whether
+rewritten notifications include bubble metadata; Android separately controls
+whether all or only selected conversations may bubble. When the WeModern switch
+is off, notifications remain standard and do not offer a bubble action. On
+Android 8 and 9, rewritten messages continue to work as normal notifications
+without bubble metadata.
 
 ## Credits
 
@@ -87,6 +97,17 @@ To use chat bubbles on Android 10 or later, open **Chat bubbles** under
 conversations in Android's bubble settings. Disabling the WeModern switch
 removes bubble metadata from current and future rewritten messages without
 disabling normal notifications.
+
+On Android 12 or later, enabling **Bubble trampoline** replaces the
+per-conversation bubble set with one stable bubble representing the latest
+message. A newer conversation updates that bubble in place. Synchronous removal
+continues to remove ordinary rewritten notifications without closing the
+dedicated WeChat bubble host. Both the Message test and incoming messages keep
+the bubble collapsed; a new message updates the bubble's visible preview and
+unread state instead of opening WeChat automatically. When the Message test
+successfully updates the trampoline host, it does not also retain notification
+ID `100`; this keeps the test path consistent with a real replacement after its
+source notification has been removed.
 
 To enable synchronous removal of rewritten WeChat notifications when WeChat
 cancels its original notification, also grant log access and enable debug

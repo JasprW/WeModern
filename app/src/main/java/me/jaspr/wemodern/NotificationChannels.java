@@ -9,6 +9,8 @@ import android.provider.Settings;
 
 final class NotificationChannels {
     static final String WECHAT_MESSAGES = "wechat_messages_alerts";
+    static final String WECHAT_BUBBLE_MESSAGES = "wechat_messages_bubbles_quiet";
+    static final String WECHAT_BUBBLE_HOST = "wechat_bubble_host_visual_alerts";
     static final String WECHAT_CALLS = "wechat_calls_live_quiet";
     static final String STATUS = "status_alerts";
 
@@ -35,6 +37,28 @@ final class NotificationChannels {
         if (Build.VERSION.SDK_INT == 29) {
             messages.setAllowBubbles(true);
         }
+        NotificationChannel bubbleMessages = new NotificationChannel(
+                WECHAT_BUBBLE_MESSAGES,
+                context.getString(R.string.channel_wechat_bubble_messages),
+                NotificationManager.IMPORTANCE_LOW);
+        bubbleMessages.setDescription(
+                context.getString(R.string.channel_wechat_bubble_messages_description));
+        bubbleMessages.setSound(null, null);
+        bubbleMessages.enableVibration(false);
+        if (Build.VERSION.SDK_INT == 29) {
+            bubbleMessages.setAllowBubbles(true);
+        }
+        NotificationChannel bubbleHost = new NotificationChannel(
+                WECHAT_BUBBLE_HOST,
+                context.getString(R.string.channel_wechat_bubble_host),
+                NotificationManager.IMPORTANCE_HIGH);
+        bubbleHost.setDescription(
+                context.getString(R.string.channel_wechat_bubble_host_description));
+        bubbleHost.setSound(null, null);
+        bubbleHost.enableVibration(false);
+        if (Build.VERSION.SDK_INT == 29) {
+            bubbleHost.setAllowBubbles(true);
+        }
         NotificationChannel status = new NotificationChannel(
                 STATUS,
                 context.getString(R.string.channel_status),
@@ -49,7 +73,25 @@ final class NotificationChannels {
         calls.setSound(null, null);
         calls.enableVibration(false);
         nm.createNotificationChannel(messages);
+        nm.createNotificationChannel(bubbleMessages);
+        nm.createNotificationChannel(bubbleHost);
         nm.createNotificationChannel(calls);
         nm.createNotificationChannel(status);
+    }
+
+    static String messageChannelId(Context context) {
+        boolean bubbleReady = ChatBubbleBehavior.isReady(
+                ChatBubbleBehavior.isEnabled(context),
+                ChatBubbleBehavior.isSystemAllowed(context)
+        );
+        return messageChannelId(bubbleReady);
+    }
+
+    static String messageChannelId(boolean bubbleReady) {
+        return bubbleReady ? WECHAT_BUBBLE_MESSAGES : WECHAT_MESSAGES;
+    }
+
+    static boolean isMessageChannel(String channelId) {
+        return WECHAT_MESSAGES.equals(channelId) || WECHAT_BUBBLE_MESSAGES.equals(channelId);
     }
 }

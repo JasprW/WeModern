@@ -26,6 +26,10 @@ final class MessageTestNotifications {
         return SHORTCUT_ID.equals(shortcutId);
     }
 
+    static boolean shouldPostSourceNotification(boolean trampolineHostPosted) {
+        return !trampolineHostPosted;
+    }
+
     static void publishConversationShortcut(Context context, CharSequence senderName, Icon avatar) {
         if (Build.VERSION.SDK_INT < 30) return;
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
