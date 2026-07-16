@@ -286,7 +286,9 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setSmallIcon(smallIcon)
                 .setContentTitle(parsed.title)
                 .setContentText(contentText)
-                .setStyle(buildMessageStyle(parsed, history, true))
+                // A group notification's per-message sender is still shown as text, but
+                // the source notification supplies only one avatar, not one per sender.
+                .setStyle(buildMessageStyle(parsed, history, !parsed.groupConversation))
                 .setWhen(sbn.getPostTime())
                 .setShowWhen(true)
                 .setDefaults(Notification.DEFAULT_ALL)
