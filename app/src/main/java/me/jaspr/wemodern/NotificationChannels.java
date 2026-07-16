@@ -94,4 +94,16 @@ final class NotificationChannels {
     static boolean isMessageChannel(String channelId) {
         return WECHAT_MESSAGES.equals(channelId) || WECHAT_BUBBLE_MESSAGES.equals(channelId);
     }
+
+    static boolean areBubbleMessageNotificationsDisabled(Context context) {
+        if (Build.VERSION.SDK_INT < 26) return false;
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null) return false;
+        NotificationChannel channel = manager.getNotificationChannel(WECHAT_BUBBLE_MESSAGES);
+        return channel != null && isDisabledImportance(channel.getImportance());
+    }
+
+    static boolean isDisabledImportance(int importance) {
+        return importance == NotificationManager.IMPORTANCE_NONE;
+    }
 }

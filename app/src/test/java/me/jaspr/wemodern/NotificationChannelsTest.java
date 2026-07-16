@@ -5,6 +5,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import android.app.NotificationManager;
+
 import org.junit.Test;
 
 public class NotificationChannelsTest {
@@ -42,5 +44,17 @@ public class NotificationChannelsTest {
         assertNotEquals(
                 NotificationChannels.WECHAT_MESSAGES,
                 NotificationChannels.WECHAT_BUBBLE_HOST);
+    }
+
+    @Test
+    public void disabledImportanceCompletesBubbleMessageOptimization() {
+        assertTrue(NotificationChannels.isDisabledImportance(
+                NotificationManager.IMPORTANCE_NONE));
+        assertFalse(NotificationChannels.isDisabledImportance(
+                NotificationManager.IMPORTANCE_MIN));
+        assertFalse(NotificationChannels.isDisabledImportance(
+                NotificationManager.IMPORTANCE_LOW));
+        assertFalse(NotificationChannels.isDisabledImportance(
+                NotificationManager.IMPORTANCE_HIGH));
     }
 }

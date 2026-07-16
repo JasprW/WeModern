@@ -150,6 +150,9 @@ class MainActivity : ComponentActivity() {
                     },
                     onRequestNotifications = { requestPostNotifications() },
                     onOpenChatBubbleSettings = { openChatBubbleSettings() },
+                    onOpenBubbleMessageChannelSettings = {
+                        openBubbleMessageChannelSettings()
+                    },
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
                     onOpenAppSettings = { openAppSettings() },
@@ -231,6 +234,8 @@ class MainActivity : ComponentActivity() {
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
             bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
+            bubbleMessageNotificationsDisabled =
+                NotificationChannels.areBubbleMessageNotificationsDisabled(this),
             chatBubblesEnabled = chatBubblesEnabled,
             chatBubblesSystemAllowed = chatBubblesSystemAllowed,
             promotedNotificationsAllowed = canPostPromotedNotifications(),
@@ -333,6 +338,29 @@ class MainActivity : ComponentActivity() {
             startActivity(
                 Intent(Settings.ACTION_APP_NOTIFICATION_BUBBLE_SETTINGS)
                     .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            )
+        }.onFailure {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            }.onFailure {
+                openAppSettings()
+            }
+        }
+    }
+
+    private fun openBubbleMessageChannelSettings() {
+        if (Build.VERSION.SDK_INT < 26) return
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    .putExtra(
+                        Settings.EXTRA_CHANNEL_ID,
+                        NotificationChannels.WECHAT_BUBBLE_MESSAGES,
+                    )
             )
         }.onFailure {
             runCatching {
@@ -521,6 +549,7 @@ private data class SetupState(
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
     val bubbleTrampolineEnabled: Boolean = false,
+    val bubbleMessageNotificationsDisabled: Boolean = false,
     val chatBubblesEnabled: Boolean = false,
     val chatBubblesSystemAllowed: Boolean = false,
     val promotedNotificationsAllowed: Boolean = false,
@@ -584,6 +613,7 @@ private fun WeModernApp(
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
+    onOpenBubbleMessageChannelSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -686,6 +716,8 @@ private fun WeModernApp(
                             chatBubblesExpanded = !chatBubblesExpanded
                         },
                         onOpenChatBubbleSettings = onOpenChatBubbleSettings,
+                        onOpenBubbleMessageChannelSettings =
+                            onOpenBubbleMessageChannelSettings,
                         onToggleSyncExpanded = { syncExpanded = !syncExpanded },
                         onCopySyncCommands = {
                             onCopySyncCommands()
@@ -1176,6 +1208,7 @@ private fun AdvancedSection(
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onToggleChatBubblesExpanded: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
+    onOpenBubbleMessageChannelSettings: () -> Unit,
     onToggleSyncExpanded: () -> Unit,
     onCopySyncCommands: () -> Unit,
 ) {
@@ -1508,66 +1541,170 @@ private fun AdvancedSection(
                                             shape = RoundedCornerShape(18.dp),
                                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
                                         ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .toggleable(
-                                                        value = state.bubbleTrampolineEnabled,
-                                                        enabled = trampolineCanBeSet,
-                                                        role = Role.Switch,
-                                                        onValueChange = onSetBubbleTrampolineEnabled,
-                                                    )
-                                                    .semantics(mergeDescendants = true) {}
-                                                    .padding(16.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                                                    contentDescription = null,
-                                                    tint = if (trampolineCanBeSet) {
-                                                        MaterialTheme.colorScheme.primary
-                                                    } else {
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                                    },
-                                                )
-                                                Column(
-                                                    modifier = Modifier.weight(1f),
-                                                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                                            Column {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .toggleable(
+                                                            value = state.bubbleTrampolineEnabled,
+                                                            enabled = trampolineCanBeSet,
+                                                            role = Role.Switch,
+                                                            onValueChange =
+                                                                onSetBubbleTrampolineEnabled,
+                                                        )
+                                                        .semantics(mergeDescendants = true) {}
+                                                        .padding(16.dp),
+                                                    horizontalArrangement =
+                                                        Arrangement.spacedBy(12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
                                                 ) {
-                                                    Text(
-                                                        text = stringResource(
-                                                            R.string.bubble_trampoline_title
-                                                        ),
-                                                        style = MaterialTheme.typography.titleSmall,
-                                                        fontWeight = FontWeight.SemiBold,
+                                                    Icon(
+                                                        imageVector =
+                                                            Icons.AutoMirrored.Rounded.OpenInNew,
+                                                        contentDescription = null,
+                                                        tint = if (trampolineCanBeSet) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        },
                                                     )
-                                                    Text(
-                                                        text = stringResource(
-                                                            when {
-                                                                !state.coreReady -> {
-                                                                    R.string.bubble_trampoline_locked_description
+                                                    Column(
+                                                        modifier = Modifier.weight(1f),
+                                                        verticalArrangement =
+                                                            Arrangement.spacedBy(3.dp),
+                                                    ) {
+                                                        Text(
+                                                            text = stringResource(
+                                                                R.string.bubble_trampoline_title
+                                                            ),
+                                                            style =
+                                                                MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                        )
+                                                        Text(
+                                                            text = stringResource(
+                                                                when {
+                                                                    !state.coreReady -> {
+                                                                        R.string.bubble_trampoline_locked_description
+                                                                    }
+                                                                    !state.chatBubblesEnabled -> {
+                                                                        R.string.bubble_trampoline_bubbles_required_description
+                                                                    }
+                                                                    !state.chatBubblesSystemAllowed -> {
+                                                                        R.string.bubble_trampoline_system_required_description
+                                                                    }
+                                                                    else -> {
+                                                                        R.string.bubble_trampoline_description
+                                                                    }
                                                                 }
-                                                                !state.chatBubblesEnabled -> {
-                                                                    R.string.bubble_trampoline_bubbles_required_description
-                                                                }
-                                                                !state.chatBubblesSystemAllowed -> {
-                                                                    R.string.bubble_trampoline_system_required_description
-                                                                }
-                                                                else -> {
-                                                                    R.string.bubble_trampoline_description
-                                                                }
-                                                            }
-                                                        ),
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            ),
+                                                            style =
+                                                                MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme
+                                                                .onSurfaceVariant,
+                                                        )
+                                                    }
+                                                    Switch(
+                                                        checked = state.bubbleTrampolineEnabled,
+                                                        enabled = trampolineCanBeSet,
+                                                        onCheckedChange = null,
                                                     )
                                                 }
-                                                Switch(
-                                                    checked = state.bubbleTrampolineEnabled,
-                                                    enabled = trampolineCanBeSet,
-                                                    onCheckedChange = null,
-                                                )
+                                                AnimatedVisibility(
+                                                    visible = state.bubbleTrampolineEnabled,
+                                                    enter = fadeIn() + expandVertically(
+                                                        expandFrom = Alignment.Top
+                                                    ),
+                                                    exit = fadeOut() + shrinkVertically(
+                                                        shrinkTowards = Alignment.Top
+                                                    ),
+                                                ) {
+                                                    Column {
+                                                        HorizontalDivider(
+                                                            modifier = Modifier.padding(
+                                                                horizontal = 16.dp
+                                                            ),
+                                                            color = MaterialTheme.colorScheme
+                                                                .outlineVariant,
+                                                        )
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .clickable(
+                                                                    onClick =
+                                                                        onOpenBubbleMessageChannelSettings
+                                                                )
+                                                                .semantics(
+                                                                    mergeDescendants = true
+                                                                ) {}
+                                                                .padding(16.dp),
+                                                            horizontalArrangement =
+                                                                Arrangement.spacedBy(12.dp),
+                                                            verticalAlignment =
+                                                                Alignment.CenterVertically,
+                                                        ) {
+                                                            Icon(
+                                                                imageVector =
+                                                                    Icons.Rounded.Notifications,
+                                                                contentDescription = null,
+                                                                tint = if (
+                                                                    state.bubbleMessageNotificationsDisabled
+                                                                ) {
+                                                                    MaterialTheme.colorScheme.primary
+                                                                } else {
+                                                                    MaterialTheme.colorScheme.tertiary
+                                                                },
+                                                            )
+                                                            Column(
+                                                                modifier = Modifier.weight(1f),
+                                                                verticalArrangement =
+                                                                    Arrangement.spacedBy(3.dp),
+                                                            ) {
+                                                                Text(
+                                                                    text = stringResource(
+                                                                        R.string.bubble_message_channel_title
+                                                                    ),
+                                                                    style = MaterialTheme.typography
+                                                                        .titleSmall,
+                                                                    fontWeight = FontWeight.SemiBold,
+                                                                )
+                                                                Text(
+                                                                    text = stringResource(
+                                                                        if (
+                                                                            state.bubbleMessageNotificationsDisabled
+                                                                        ) {
+                                                                            R.string.bubble_message_channel_disabled_description
+                                                                        } else {
+                                                                            R.string.bubble_message_channel_recommendation
+                                                                        }
+                                                                    ),
+                                                                    style = MaterialTheme.typography
+                                                                        .bodySmall,
+                                                                    color = MaterialTheme.colorScheme
+                                                                        .onSurfaceVariant,
+                                                                )
+                                                            }
+                                                            Icon(
+                                                                imageVector = if (
+                                                                    state.bubbleMessageNotificationsDisabled
+                                                                ) {
+                                                                    Icons.Rounded.CheckCircle
+                                                                } else {
+                                                                    Icons.Rounded.ChevronRight
+                                                                },
+                                                                contentDescription = null,
+                                                                tint = if (
+                                                                    state.bubbleMessageNotificationsDisabled
+                                                                ) {
+                                                                    MaterialTheme.colorScheme.primary
+                                                                } else {
+                                                                    MaterialTheme.colorScheme
+                                                                        .onSurfaceVariant
+                                                                },
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }

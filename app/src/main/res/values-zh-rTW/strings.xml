@@ -32,6 +32,9 @@
     <string name="bubble_trampoline_locked_description">完成必要的通知設定後可開啟</string>
     <string name="bubble_trampoline_bubbles_required_description">開啟聊天泡泡後可設定</string>
     <string name="bubble_trampoline_system_required_description">請先在 Android 設定中允許泡泡</string>
+    <string name="bubble_message_channel_title">減少重複通知</string>
+    <string name="bubble_message_channel_recommendation">建議前往系統設定關閉「微信泡泡訊息」通知，體驗更佳</string>
+    <string name="bubble_message_channel_disabled_description">「微信泡泡訊息」通知已關閉</string>
     <string name="app_icon_shortcut_tip_title">如何返回設定</string>
     <string name="app_icon_shortcut_tip_message">長按 WeModern 應用程式圖示，然後點選「設定」捷徑。</string>
     <string name="action_got_it">知道了</string>

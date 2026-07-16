@@ -32,6 +32,9 @@
     <string name="bubble_trampoline_locked_description">Finish required notification setup to enable</string>
     <string name="bubble_trampoline_bubbles_required_description">Turn on Chat bubbles to configure</string>
     <string name="bubble_trampoline_system_required_description">Allow bubbles in Android settings first</string>
+    <string name="bubble_message_channel_title">Reduce duplicate notifications</string>
+    <string name="bubble_message_channel_recommendation">For a cleaner experience, open Android settings and turn off WeChat bubble messages</string>
+    <string name="bubble_message_channel_disabled_description">WeChat bubble messages are off</string>
     <string name="app_icon_shortcut_tip_title">How to return to settings</string>
     <string name="app_icon_shortcut_tip_message">Touch and hold the WeModern app icon, then tap the Settings shortcut.</string>
     <string name="action_got_it">Got it</string>
