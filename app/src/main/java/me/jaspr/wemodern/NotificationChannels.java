@@ -9,7 +9,9 @@ import android.provider.Settings;
 
 final class NotificationChannels {
     static final String WECHAT_MESSAGES = "wechat_messages_alerts";
-    static final String WECHAT_BUBBLE_MESSAGES = "wechat_messages_bubbles_quiet";
+    // Keep the persisted channel ID stable, but name the symbol after its real role:
+    // ordinary per-conversation notifications posted while bubble mode is ready.
+    static final String WECHAT_BUBBLE_MODE_CONVERSATIONS = "wechat_messages_bubbles_quiet";
     static final String WECHAT_BUBBLE_HOST = "wechat_bubble_host_visual_alerts";
     static final String WECHAT_CALLS = "wechat_calls_live_quiet";
     static final String STATUS = "status_alerts";
@@ -37,16 +39,17 @@ final class NotificationChannels {
         if (Build.VERSION.SDK_INT == 29) {
             messages.setAllowBubbles(true);
         }
-        NotificationChannel bubbleMessages = new NotificationChannel(
-                WECHAT_BUBBLE_MESSAGES,
-                context.getString(R.string.channel_wechat_bubble_messages),
+        NotificationChannel bubbleModeConversations = new NotificationChannel(
+                WECHAT_BUBBLE_MODE_CONVERSATIONS,
+                context.getString(R.string.channel_wechat_bubble_mode_conversations),
                 NotificationManager.IMPORTANCE_LOW);
-        bubbleMessages.setDescription(
-                context.getString(R.string.channel_wechat_bubble_messages_description));
-        bubbleMessages.setSound(null, null);
-        bubbleMessages.enableVibration(false);
+        bubbleModeConversations.setDescription(
+                context.getString(
+                        R.string.channel_wechat_bubble_mode_conversations_description));
+        bubbleModeConversations.setSound(null, null);
+        bubbleModeConversations.enableVibration(false);
         if (Build.VERSION.SDK_INT == 29) {
-            bubbleMessages.setAllowBubbles(true);
+            bubbleModeConversations.setAllowBubbles(true);
         }
         NotificationChannel bubbleHost = new NotificationChannel(
                 WECHAT_BUBBLE_HOST,
@@ -73,7 +76,7 @@ final class NotificationChannels {
         calls.setSound(null, null);
         calls.enableVibration(false);
         nm.createNotificationChannel(messages);
-        nm.createNotificationChannel(bubbleMessages);
+        nm.createNotificationChannel(bubbleModeConversations);
         nm.createNotificationChannel(bubbleHost);
         nm.createNotificationChannel(calls);
         nm.createNotificationChannel(status);
@@ -88,19 +91,32 @@ final class NotificationChannels {
     }
 
     static String messageChannelId(boolean bubbleReady) {
-        return bubbleReady ? WECHAT_BUBBLE_MESSAGES : WECHAT_MESSAGES;
+        return bubbleReady ? WECHAT_BUBBLE_MODE_CONVERSATIONS : WECHAT_MESSAGES;
     }
 
     static boolean isMessageChannel(String channelId) {
-        return WECHAT_MESSAGES.equals(channelId) || WECHAT_BUBBLE_MESSAGES.equals(channelId);
+        return WECHAT_MESSAGES.equals(channelId)
+                || WECHAT_BUBBLE_MODE_CONVERSATIONS.equals(channelId);
     }
 
-    static boolean areBubbleMessageNotificationsDisabled(Context context) {
+    static boolean isBubbleHostNotificationMinimized(Context context) {
         if (Build.VERSION.SDK_INT < 26) return false;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return false;
-        NotificationChannel channel = manager.getNotificationChannel(WECHAT_BUBBLE_MESSAGES);
+        NotificationChannel channel = manager.getNotificationChannel(WECHAT_BUBBLE_HOST);
+        return channel != null && isMinimizedImportance(channel.getImportance());
+    }
+
+    static boolean areBubbleHostNotificationsDisabled(Context context) {
+        if (Build.VERSION.SDK_INT < 26) return false;
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null) return false;
+        NotificationChannel channel = manager.getNotificationChannel(WECHAT_BUBBLE_HOST);
         return channel != null && isDisabledImportance(channel.getImportance());
+    }
+
+    static boolean isMinimizedImportance(int importance) {
+        return importance == NotificationManager.IMPORTANCE_MIN;
     }
 
     static boolean isDisabledImportance(int importance) {

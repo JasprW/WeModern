@@ -150,8 +150,8 @@ class MainActivity : ComponentActivity() {
                     },
                     onRequestNotifications = { requestPostNotifications() },
                     onOpenChatBubbleSettings = { openChatBubbleSettings() },
-                    onOpenBubbleMessageChannelSettings = {
-                        openBubbleMessageChannelSettings()
+                    onOpenBubbleHostChannelSettings = {
+                        openBubbleHostChannelSettings()
                     },
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
@@ -234,8 +234,10 @@ class MainActivity : ComponentActivity() {
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
             bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
-            bubbleMessageNotificationsDisabled =
-                NotificationChannels.areBubbleMessageNotificationsDisabled(this),
+            bubbleHostNotificationMinimized =
+                NotificationChannels.isBubbleHostNotificationMinimized(this),
+            bubbleHostNotificationsDisabled =
+                NotificationChannels.areBubbleHostNotificationsDisabled(this),
             chatBubblesEnabled = chatBubblesEnabled,
             chatBubblesSystemAllowed = chatBubblesSystemAllowed,
             promotedNotificationsAllowed = canPostPromotedNotifications(),
@@ -351,7 +353,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openBubbleMessageChannelSettings() {
+    private fun openBubbleHostChannelSettings() {
         if (Build.VERSION.SDK_INT < 26) return
         runCatching {
             startActivity(
@@ -359,7 +361,7 @@ class MainActivity : ComponentActivity() {
                     .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
                     .putExtra(
                         Settings.EXTRA_CHANNEL_ID,
-                        NotificationChannels.WECHAT_BUBBLE_MESSAGES,
+                        NotificationChannels.WECHAT_BUBBLE_HOST,
                     )
             )
         }.onFailure {
@@ -549,7 +551,8 @@ private data class SetupState(
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
     val bubbleTrampolineEnabled: Boolean = false,
-    val bubbleMessageNotificationsDisabled: Boolean = false,
+    val bubbleHostNotificationMinimized: Boolean = false,
+    val bubbleHostNotificationsDisabled: Boolean = false,
     val chatBubblesEnabled: Boolean = false,
     val chatBubblesSystemAllowed: Boolean = false,
     val promotedNotificationsAllowed: Boolean = false,
@@ -613,7 +616,7 @@ private fun WeModernApp(
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
-    onOpenBubbleMessageChannelSettings: () -> Unit,
+    onOpenBubbleHostChannelSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -716,8 +719,8 @@ private fun WeModernApp(
                             chatBubblesExpanded = !chatBubblesExpanded
                         },
                         onOpenChatBubbleSettings = onOpenChatBubbleSettings,
-                        onOpenBubbleMessageChannelSettings =
-                            onOpenBubbleMessageChannelSettings,
+                        onOpenBubbleHostChannelSettings =
+                            onOpenBubbleHostChannelSettings,
                         onToggleSyncExpanded = { syncExpanded = !syncExpanded },
                         onCopySyncCommands = {
                             onCopySyncCommands()
@@ -1208,7 +1211,7 @@ private fun AdvancedSection(
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onToggleChatBubblesExpanded: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
-    onOpenBubbleMessageChannelSettings: () -> Unit,
+    onOpenBubbleHostChannelSettings: () -> Unit,
     onToggleSyncExpanded: () -> Unit,
     onCopySyncCommands: () -> Unit,
 ) {
@@ -1632,7 +1635,7 @@ private fun AdvancedSection(
                                                                 .fillMaxWidth()
                                                                 .clickable(
                                                                     onClick =
-                                                                        onOpenBubbleMessageChannelSettings
+                                                                        onOpenBubbleHostChannelSettings
                                                                 )
                                                                 .semantics(
                                                                     mergeDescendants = true
@@ -1648,7 +1651,7 @@ private fun AdvancedSection(
                                                                     Icons.Rounded.Notifications,
                                                                 contentDescription = null,
                                                                 tint = if (
-                                                                    state.bubbleMessageNotificationsDisabled
+                                                                    state.bubbleHostNotificationMinimized
                                                                 ) {
                                                                     MaterialTheme.colorScheme.primary
                                                                 } else {
@@ -1662,7 +1665,7 @@ private fun AdvancedSection(
                                                             ) {
                                                                 Text(
                                                                     text = stringResource(
-                                                                        R.string.bubble_message_channel_title
+                                                                        R.string.bubble_host_channel_optimization_title
                                                                     ),
                                                                     style = MaterialTheme.typography
                                                                         .titleSmall,
@@ -1671,11 +1674,15 @@ private fun AdvancedSection(
                                                                 Text(
                                                                     text = stringResource(
                                                                         if (
-                                                                            state.bubbleMessageNotificationsDisabled
+                                                                            state.bubbleHostNotificationMinimized
                                                                         ) {
-                                                                            R.string.bubble_message_channel_disabled_description
+                                                                            R.string.bubble_host_channel_optimized_description
+                                                                        } else if (
+                                                                            state.bubbleHostNotificationsDisabled
+                                                                        ) {
+                                                                            R.string.bubble_host_channel_disabled_description
                                                                         } else {
-                                                                            R.string.bubble_message_channel_recommendation
+                                                                            R.string.bubble_host_channel_optimization_recommendation
                                                                         }
                                                                     ),
                                                                     style = MaterialTheme.typography
@@ -1686,7 +1693,7 @@ private fun AdvancedSection(
                                                             }
                                                             Icon(
                                                                 imageVector = if (
-                                                                    state.bubbleMessageNotificationsDisabled
+                                                                    state.bubbleHostNotificationMinimized
                                                                 ) {
                                                                     Icons.Rounded.CheckCircle
                                                                 } else {
@@ -1694,7 +1701,7 @@ private fun AdvancedSection(
                                                                 },
                                                                 contentDescription = null,
                                                                 tint = if (
-                                                                    state.bubbleMessageNotificationsDisabled
+                                                                    state.bubbleHostNotificationMinimized
                                                                 ) {
                                                                     MaterialTheme.colorScheme.primary
                                                                 } else {

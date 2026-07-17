@@ -37,7 +37,7 @@ public class TrampolineBubbleHostTest {
                 "wechat_alice",
                 false));
         assertTrue(TrampolineBubbleHost.isEligibleSource(
-                NotificationChannels.WECHAT_BUBBLE_MESSAGES,
+                NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS,
                 42,
                 "wechat_alice",
                 false));
