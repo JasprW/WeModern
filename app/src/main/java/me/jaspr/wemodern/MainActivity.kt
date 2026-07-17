@@ -240,7 +240,7 @@ class MainActivity : ComponentActivity() {
         if (AppIconLaunchPolicy.shouldForwardFromSettings(
                 launchedFromBubble,
                 openWeChatEnabled,
-            ) && WeChatLauncher.open(this)
+            ) && WeChatLauncher.openFromBubbleFallback(this)
         ) {
             finish()
             return

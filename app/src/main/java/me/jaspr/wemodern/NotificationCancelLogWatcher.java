@@ -15,16 +15,26 @@ final class NotificationCancelLogWatcher {
         void onAppCancelled(String pkg, int id, String tag, int userId, int reason);
     }
 
+    interface ActivityCallback {
+        void onActivityEvent(ActivityEvent event);
+    }
+
     private static final String TAG = "WeModern.Logs";
     private static final String EVENT_TAG = "notification_cancel";
+    private static final String RESTART_ACTIVITY_TAG = "wm_restart_activity";
+    private static final String RESUME_ACTIVITY_TAG = "wm_resume_activity";
+    private static final String CREATE_ACTIVITY_TAG = "wm_create_activity";
+    private static final String TASK_REMOVED_TAG = "wm_task_removed";
 
     private final Callback callback;
+    private final ActivityCallback activityCallback;
     private volatile boolean running;
     private Thread thread;
     private Process process;
 
-    NotificationCancelLogWatcher(Callback callback) {
+    NotificationCancelLogWatcher(Callback callback, ActivityCallback activityCallback) {
         this.callback = callback;
+        this.activityCallback = activityCallback;
     }
 
     synchronized void start() {
@@ -44,14 +54,27 @@ final class NotificationCancelLogWatcher {
     }
 
     private void run() {
+        seedActivityState();
         while (running) {
             Process current = null;
             try {
-                current = new ProcessBuilder("logcat", "-b", "events", "-v", "brief").redirectErrorStream(true).start();
+                // Follow only new events. Replaying the whole ring buffer would treat historical
+                // WeChat cancels and removed task IDs as if they happened in the current session.
+                current = new ProcessBuilder(
+                        "logcat",
+                        "-b",
+                        "events",
+                        "-v",
+                        "brief",
+                        "-T",
+                        "1"
+                ).redirectErrorStream(true).start();
                 process = current;
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(current.getInputStream()))) {
                     String line;
                     while (running && (line = reader.readLine()) != null) {
+                        ActivityEvent activityEvent = parseActivityEvent(line);
+                        if (activityEvent != null) activityCallback.onActivityEvent(activityEvent);
                         Event event = parse(line);
                         if (event == null) continue;
                         if (event.reason == NotificationListenerService.REASON_APP_CANCEL
@@ -85,6 +108,35 @@ final class NotificationCancelLogWatcher {
         }
     }
 
+    private void seedActivityState() {
+        Process seed = null;
+        try {
+            seed = new ProcessBuilder(
+                    "logcat",
+                    "-b",
+                    "events",
+                    "-d",
+                    "-v",
+                    "brief",
+                    "-t",
+                    "200"
+            ).redirectErrorStream(true).start();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(seed.getInputStream()))) {
+                String line;
+                while (running && (line = reader.readLine()) != null) {
+                    ActivityEvent event = parseActivityEvent(line);
+                    if (event == null || event.type == ActivityEvent.TYPE_CREATED) continue;
+                    activityCallback.onActivityEvent(event);
+                }
+            }
+        } catch (IOException e) {
+            if (running) Log.w(TAG, "Unable to seed foreground activity state", e);
+        } finally {
+            if (seed != null) seed.destroy();
+        }
+    }
+
     static Event parse(String line) {
         if (line == null || !line.contains(EVENT_TAG)) return null;
         int start = line.indexOf('[');
@@ -106,6 +158,42 @@ final class NotificationCancelLogWatcher {
             Log.d(TAG, "Unrecognized notification_cancel line: " + line);
             return null;
         }
+    }
+
+    static ActivityEvent parseActivityEvent(String line) {
+        if (line == null) return null;
+        int start = line.indexOf('[');
+        int end = line.lastIndexOf(']');
+        if (start < 0 || end <= start) return null;
+
+        List<String> fields = splitFields(line.substring(start + 1, end));
+        try {
+            if (line.contains(CREATE_ACTIVITY_TAG)) {
+                if (fields.size() < 5) return null;
+                int taskId = Integer.parseInt(fields.get(2));
+                String component = fields.get(3).trim();
+                if (component.indexOf('/') <= 0) return null;
+                return ActivityEvent.created(
+                        taskId,
+                        component,
+                        normalizeTag(fields.get(4))
+                );
+            }
+            if (line.contains(RESTART_ACTIVITY_TAG) || line.contains(RESUME_ACTIVITY_TAG)) {
+                if (fields.size() < 4) return null;
+                int taskId = Integer.parseInt(fields.get(2));
+                String component = fields.get(3).trim();
+                if (component.indexOf('/') <= 0) return null;
+                return ActivityEvent.resumed(taskId, component);
+            }
+            if (line.contains(TASK_REMOVED_TAG)) {
+                if (fields.isEmpty()) return null;
+                return ActivityEvent.taskRemoved(Integer.parseInt(fields.get(0)));
+            }
+        } catch (NumberFormatException e) {
+            Log.d(TAG, "Unrecognized activity event line: " + line);
+        }
+        return null;
     }
 
     private static List<String> splitFields(String payload) {
@@ -146,6 +234,36 @@ final class NotificationCancelLogWatcher {
             this.tag = tag;
             this.userId = userId;
             this.reason = reason;
+        }
+    }
+
+    static final class ActivityEvent {
+        static final int TYPE_RESUMED = 1;
+        static final int TYPE_TASK_REMOVED = 2;
+        static final int TYPE_CREATED = 3;
+
+        final int type;
+        final int taskId;
+        final String componentName;
+        final String action;
+
+        private ActivityEvent(int type, int taskId, String componentName, String action) {
+            this.type = type;
+            this.taskId = taskId;
+            this.componentName = componentName;
+            this.action = action;
+        }
+
+        static ActivityEvent resumed(int taskId, String componentName) {
+            return new ActivityEvent(TYPE_RESUMED, taskId, componentName, null);
+        }
+
+        static ActivityEvent created(int taskId, String componentName, String action) {
+            return new ActivityEvent(TYPE_CREATED, taskId, componentName, action);
+        }
+
+        static ActivityEvent taskRemoved(int taskId) {
+            return new ActivityEvent(TYPE_TASK_REMOVED, taskId, null, null);
         }
     }
 }

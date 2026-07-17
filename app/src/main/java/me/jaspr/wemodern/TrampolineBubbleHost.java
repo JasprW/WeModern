@@ -27,6 +27,7 @@ final class TrampolineBubbleHost {
     static final String SHORTCUT_ID = "wemodern_wechat_bubble_host";
 
     private static final int REQUEST_CODE = 0x44000000;
+    private static volatile boolean hostNotificationPosted;
 
     private TrampolineBubbleHost() {
     }
@@ -37,6 +38,10 @@ final class TrampolineBubbleHost {
 
     static int requestCode() {
         return REQUEST_CODE;
+    }
+
+    static boolean isHostNotificationPosted() {
+        return hostNotificationPosted;
     }
 
     static boolean shouldAutoExpand() {
@@ -57,14 +62,16 @@ final class TrampolineBubbleHost {
             boolean conversationEnabled,
             boolean hasSource,
             boolean hasIcon,
-            boolean hasWeChatLauncher
+            boolean hasWeChatLauncher,
+            boolean weChatForeground
     ) {
         return chatBubblesReady
                 && trampolineEnabled
                 && conversationEnabled
                 && hasSource
                 && hasIcon
-                && hasWeChatLauncher;
+                && hasWeChatLauncher
+                && !weChatForeground;
     }
 
     static boolean isEligibleSource(
@@ -101,14 +108,21 @@ final class TrampolineBubbleHost {
         boolean conversationEnabled =
                 ConversationBubblePreferences.isEnabled(context, sourceConversationId);
         Intent weChatTarget = WeChatLauncher.createBubbleRootIntent(context);
+        boolean weChatForeground = WeChatForegroundState.isWeChatForeground();
         if (!shouldPost(
                 chatBubblesReady,
                 trampolineEnabled,
                 conversationEnabled,
                 source != null,
                 sourceIcon != null,
-                weChatTarget != null
-        )) return false;
+                weChatTarget != null,
+                weChatForeground
+        )) {
+            if (weChatForeground) {
+                Log.d(TAG, "skip trampoline bubble update while WeChat is foreground");
+            }
+            return false;
+        }
 
         NotificationManager notificationManager =
                 context.getSystemService(NotificationManager.class);
@@ -157,6 +171,7 @@ final class TrampolineBubbleHost {
 
             notificationManager.notify(NOTIFICATION_ID, builder.build());
             posted = true;
+            hostNotificationPosted = true;
             Log.i(TAG, "updated trampoline bubble host"
                     + ", sourceConversation=" + sourceConversationId
                     + ", shortcut=" + SHORTCUT_ID
@@ -212,6 +227,8 @@ final class TrampolineBubbleHost {
     }
 
     static void clear(Context context) {
+        hostNotificationPosted = false;
+        TrampolineBubbleSessionState.onHostCleared();
         NotificationManager notificationManager =
                 context.getSystemService(NotificationManager.class);
         if (notificationManager != null) {

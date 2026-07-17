@@ -1,6 +1,5 @@
 package me.jaspr.wemodern;
 
-import android.app.ActivityOptions;
 import android.app.PendingIntent;
 import android.app.Person;
 import android.content.ComponentName;
@@ -264,25 +263,15 @@ final class ConversationShortcuts {
             String conversationId,
             PendingIntent contentIntent
     ) {
-        try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                ActivityOptions options = ActivityOptions.makeBasic();
-                options.setPendingIntentBackgroundActivityStartMode(
-                        Build.VERSION.SDK_INT >= 36
-                                ? ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE
-                                : ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
-                contentIntent.send(options.toBundle());
-            } else {
-                contentIntent.send();
-            }
+        BubbleLaunchCleanup.clear(context);
+        if (PendingIntentLauncher.send(contentIntent)) {
             ShortcutManager manager = context.getSystemService(ShortcutManager.class);
             if (manager != null) manager.reportShortcutUsed(conversationId);
             return true;
-        } catch (PendingIntent.CanceledException e) {
-            CONTENT_INTENTS.remove(conversationId, contentIntent);
-            Log.w(TAG, "conversation pending intent is no longer valid: " + conversationId, e);
-            return false;
         }
+        CONTENT_INTENTS.remove(conversationId, contentIntent);
+        Log.w(TAG, "conversation pending intent is no longer valid: " + conversationId);
+        return false;
     }
 
     private static ShortcutInfo buildShortcut(

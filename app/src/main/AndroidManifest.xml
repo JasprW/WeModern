@@ -43,6 +43,14 @@
             android:theme="@style/ShortcutTrampolineTheme" />
 
         <activity
+            android:name=".WeChatLaunchProxyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/ShortcutTrampolineTheme" />
+
+        <activity
             android:name=".BubbleConversationActivity"
             android:allowEmbedded="true"
             android:documentLaunchMode="always"

@@ -51,7 +51,10 @@ public class WeChatNotificationService extends NotificationListenerService {
         super.onCreate();
         NotificationChannels.ensure(this);
         ConversationBubbles.syncActiveNotifications(this);
-        cancelLogWatcher = new NotificationCancelLogWatcher(this::handleNotificationCancelLog);
+        cancelLogWatcher = new NotificationCancelLogWatcher(
+                this::handleNotificationCancelLog,
+                this::handleActivityEvent
+        );
         cancelLogWatcher.start();
         Log.i(TAG, "service created, sdk=" + Build.VERSION.SDK_INT);
     }
@@ -133,6 +136,9 @@ public class WeChatNotificationService extends NotificationListenerService {
             Log.d(TAG, "wechat hidden by self: key=" + key + ", reason=" + reasonName(reason));
             return;
         }
+        if (shouldClearBubblesAfterWeChatRemoval(reason)) {
+            BubbleLaunchCleanup.clearAfterWeChatAppCancel(this);
+        }
         if (WeChatParser.isVoipNotification(sbn.getNotification())) {
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancel(voipReplacementId(sbn));
             forgetReplacement(CancelEventKey.from(sbn));
@@ -157,6 +163,7 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private void handleNotificationCancelLog(String pkg, int id, String tag, int userId, int reason) {
         if (!WECHAT_PACKAGE.equals(pkg)) return;
+        BubbleLaunchCleanup.clearAfterWeChatAppCancel(this);
         CancelEventKey eventKey = new CancelEventKey(userId, id, tag);
         ReplacementRecord replacement = replacementsByCancelEvent.get(eventKey);
         if (replacement == null) {
@@ -190,6 +197,38 @@ public class WeChatNotificationService extends NotificationListenerService {
                 + ", key=" + replacement.originalKey
                 + ", conversation=" + replacement.conversationKey
                 + ", reason=" + reasonName(reason));
+    }
+
+    private void handleActivityEvent(NotificationCancelLogWatcher.ActivityEvent event) {
+        if (event.type == NotificationCancelLogWatcher.ActivityEvent.TYPE_CREATED) {
+            if (TrampolineBubbleHost.isHostNotificationPosted()
+                    && WeChatLauncher.isBubbleRootActivity(
+                            event.componentName,
+                            event.action
+                    )) {
+                TrampolineBubbleSessionState.onEmbeddedLaunchStarted(event.taskId);
+                Log.i(TAG, "tracking trampoline bubble task"
+                        + ", taskId=" + event.taskId
+                        + ", activity=" + event.componentName);
+            }
+            return;
+        }
+        if (event.type == NotificationCancelLogWatcher.ActivityEvent.TYPE_RESUMED) {
+            WeChatForegroundState.onForegroundActivityChanged(
+                    event.taskId,
+                    event.componentName
+            );
+            return;
+        }
+        if (event.type != NotificationCancelLogWatcher.ActivityEvent.TYPE_TASK_REMOVED) return;
+        WeChatForegroundState.onTaskRemoved(event.taskId);
+        if (TrampolineBubbleSessionState.onTaskRemoved(event.taskId)) {
+            mainHandler.post(() -> {
+                Log.i(TAG, "clearing trampoline host after bubble task removed"
+                        + ", taskId=" + event.taskId);
+                TrampolineBubbleHost.clear(this);
+            });
+        }
     }
 
     private void handleWeChatNotification(StatusBarNotification sbn, boolean fromActiveScan) {
@@ -322,7 +361,12 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
 
         PendingIntent contentIntent = original.contentIntent;
-        if (contentIntent != null) builder.setContentIntent(contentIntent);
+        PendingIntent launchIntent = WeChatLaunchProxyActivity.wrap(
+                this,
+                "message:" + parsed.conversationKey,
+                contentIntent
+        );
+        if (launchIntent != null) builder.setContentIntent(launchIntent);
         PendingIntent deleteIntent = original.deleteIntent;
         if (deleteIntent != null) builder.setDeleteIntent(deleteIntent);
 
@@ -397,7 +441,12 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setCategory(Notification.CATEGORY_MESSAGE)
                 .setVisibility(NotificationChannels.messageLockscreenVisibility())
                 .setColor(0xff33b332);
-        if (contentIntent != null) builder.setContentIntent(contentIntent);
+        PendingIntent launchIntent = WeChatLaunchProxyActivity.wrap(
+                this,
+                "message-summary",
+                contentIntent
+        );
+        if (launchIntent != null) builder.setContentIntent(launchIntent);
         ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))
                 .notify(MESSAGE_GROUP_SUMMARY_ID, builder.build());
     }
@@ -651,7 +700,12 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setColor(0xff33b332);
 
         PendingIntent contentIntent = original.contentIntent;
-        if (contentIntent != null) builder.setContentIntent(contentIntent);
+        PendingIntent launchIntent = WeChatLaunchProxyActivity.wrap(
+                this,
+                "voip:" + sbn.getKey(),
+                contentIntent
+        );
+        if (launchIntent != null) builder.setContentIntent(launchIntent);
         PendingIntent deleteIntent = original.deleteIntent;
         if (deleteIntent != null) builder.setDeleteIntent(deleteIntent);
 
@@ -723,6 +777,12 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     static boolean shouldSnoozeOriginal(int flags) {
         return (flags & (Notification.FLAG_FOREGROUND_SERVICE | Notification.FLAG_NO_CLEAR)) != 0;
+    }
+
+    static boolean shouldClearBubblesAfterWeChatRemoval(int reason) {
+        return reason == 0
+                || reason == NotificationListenerService.REASON_APP_CANCEL
+                || reason == NotificationListenerService.REASON_APP_CANCEL_ALL;
     }
 
     private static String reasonName(int reason) {
