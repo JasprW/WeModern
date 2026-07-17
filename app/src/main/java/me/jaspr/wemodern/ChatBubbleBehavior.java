@@ -47,11 +47,15 @@ final class ChatBubbleBehavior {
         return enabled && systemAllowed;
     }
 
+    static boolean canEnable(boolean coreReady, boolean systemAllowed) {
+        return coreReady && systemAllowed;
+    }
+
     static boolean canUseTrampoline(
             boolean coreReady,
             boolean enabled,
             boolean systemAllowed
     ) {
-        return coreReady && isReady(enabled, systemAllowed);
+        return canEnable(coreReady, systemAllowed) && enabled;
     }
 }

@@ -52,14 +52,16 @@ final class TrampolineBubbleHost {
     }
 
     static boolean shouldPost(
-            boolean chatBubblesEnabled,
+            boolean chatBubblesReady,
             boolean trampolineEnabled,
+            boolean conversationEnabled,
             boolean hasSource,
             boolean hasIcon,
             boolean hasWeChatLauncher
     ) {
-        return chatBubblesEnabled
+        return chatBubblesReady
                 && trampolineEnabled
+                && conversationEnabled
                 && hasSource
                 && hasIcon
                 && hasWeChatLauncher;
@@ -96,15 +98,17 @@ final class TrampolineBubbleHost {
                 ChatBubbleBehavior.isSystemAllowed(context)
         );
         boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
-        if (!chatBubblesReady
-                || !trampolineEnabled
-                || source == null
-                || sourceIcon == null) {
-            return false;
-        }
-
+        boolean conversationEnabled =
+                ConversationBubblePreferences.isEnabled(context, sourceConversationId);
         Intent weChatTarget = WeChatLauncher.createBubbleRootIntent(context);
-        if (weChatTarget == null) return false;
+        if (!shouldPost(
+                chatBubblesReady,
+                trampolineEnabled,
+                conversationEnabled,
+                source != null,
+                sourceIcon != null,
+                weChatTarget != null
+        )) return false;
 
         NotificationManager notificationManager =
                 context.getSystemService(NotificationManager.class);
@@ -180,6 +184,9 @@ final class TrampolineBubbleHost {
                     sbn.getId(),
                     notification.getShortcutId(),
                     groupSummary
+            ) || !ConversationBubblePreferences.isEnabled(
+                    context,
+                    notification.getShortcutId()
             )) {
                 continue;
             }
@@ -188,7 +195,10 @@ final class TrampolineBubbleHost {
                 newestPostTime = sbn.getPostTime();
             }
         }
-        if (newest == null) return;
+        if (newest == null) {
+            clear(context);
+            return;
+        }
 
         Notification source = newest.getNotification();
         Icon icon = source.getLargeIcon();

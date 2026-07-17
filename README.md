@@ -42,9 +42,11 @@ conversation instead of creating competing WeChat tasks. Ordinary rewritten
 notifications remain independently removable, including when synchronous
 removal is enabled. When bubbles are ready, ordinary message notifications use
 a low-importance quiet channel, while the fixed Bubble host uses a separate
-silent visual-alert channel so SystemUI can show its message preview without a
-text heads-up, sound, or vibration. When bubbles are off or unavailable,
-messages return to the alerting channel.
+silent, minimized channel so SystemUI can update the bubble without adding a
+second status-bar icon, text heads-up, sound, or vibration. When bubbles are off or unavailable,
+messages return to the alerting channel. Conversation notifications request
+full lock-screen visibility by default; the user's Android notification and
+lock-screen settings remain authoritative.
 WeModern's own Chat bubbles switch controls whether
 rewritten notifications include bubble metadata; Android separately controls
 whether all or only selected conversations may bubble. When the WeModern switch
@@ -92,15 +94,27 @@ After installing the APK, enable notification listener access for `WeModern` and
 adb shell cmd appops set me.jaspr.wemodern RECEIVE_SENSITIVE_NOTIFICATIONS allow
 ```
 
-To use chat bubbles on Android 10 or later, open **Chat bubbles** under
-**Advanced**, enable the WeModern feature switch, then allow all or selected
-conversations in Android's bubble settings. Disabling the WeModern switch
-removes bubble metadata from current and future rewritten messages without
-disabling normal notifications.
+To use chat bubbles on Android 10 or later, first open **Android bubble setting**
+in the **Setup** section and allow all or selected conversations. The WeModern
+feature switch in **Bubbles** can only be enabled after that system setting is
+allowed. Private and group chats both bubble
+by default. Their defaults can be changed independently, and any known
+conversation can override its default with Always allow or Never allow.
+Known conversations can be sorted by recency or total notification count.
+Disabling bubble support for a conversation removes its bubble metadata without
+disabling its normal notification; that conversation uses the alerting message
+channel so new messages can still appear as heads-up notifications.
+
+Conversation overrides are keyed by the source name in WeChat's notification.
+Changing a nickname or remark, renaming a group, or changing the WeChat language
+can therefore make an existing override stop matching.
 
 On Android 12 or later, enabling **Bubble trampoline** replaces the
 per-conversation bubble set with one stable bubble representing the latest
-message. A newer conversation updates that bubble in place. Synchronous removal
+eligible message. The same private/group defaults and conversation overrides
+decide which conversations may create, update, or take over that shared bubble.
+A disabled conversation keeps its heads-up notification but does not affect the
+current trampoline bubble. Synchronous removal
 continues to remove ordinary rewritten notifications without closing the
 dedicated WeChat bubble host. Both the Message test and incoming messages keep
 the bubble collapsed; a new message updates the bubble's visible preview and

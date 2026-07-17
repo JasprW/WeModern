@@ -236,8 +236,25 @@ public class WeChatNotificationService extends NotificationListenerService {
             while (history.size() > MAX_HISTORY) history.removeFirst();
         }
 
-        ConversationShortcuts.publish(this, parsed.conversationKey, parsed.title, originalSenderIcon,
-                original.contentIntent);
+        long avatarRevision = ConversationShortcuts.updateAvatarCache(
+                this,
+                parsed.conversationKey,
+                originalSenderIcon
+        );
+        ConversationBubblePreferences.record(
+                this,
+                parsed.conversationKey,
+                parsed.title,
+                parsed.groupConversation,
+                sbn.getPostTime(),
+                avatarRevision
+        );
+        ConversationShortcuts.publish(
+                this,
+                parsed.conversationKey,
+                parsed.title,
+                original.contentIntent
+        );
         ConversationBubbleState bubbleState = ConversationBubbleStore.get(parsed.conversationKey);
         if (bubbleState == null) {
             bubbleState = ConversationBubbleState.create(
@@ -281,7 +298,10 @@ public class WeChatNotificationService extends NotificationListenerService {
                 ? parsed.sender + ": " + parsed.text
                 : parsed.text;
         Icon smallIcon = resolveSmallIcon(original);
-        String messageChannelId = NotificationChannels.messageChannelId(this);
+        String messageChannelId = NotificationChannels.messageChannelId(
+                this,
+                parsed.conversationKey
+        );
         Notification.Builder builder = new Notification.Builder(this, messageChannelId)
                 .setSmallIcon(smallIcon)
                 .setContentTitle(parsed.title)
@@ -294,6 +314,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_MESSAGE)
+                .setVisibility(NotificationChannels.messageLockscreenVisibility())
                 .setColor(0xff33b332)
                 .setGroup(MESSAGE_GROUP_KEY);
         if (senderIcon != null) {
@@ -374,6 +395,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_MESSAGE)
+                .setVisibility(NotificationChannels.messageLockscreenVisibility())
                 .setColor(0xff33b332);
         if (contentIntent != null) builder.setContentIntent(contentIntent);
         ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE))

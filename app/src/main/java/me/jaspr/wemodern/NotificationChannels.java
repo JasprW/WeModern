@@ -1,5 +1,6 @@
 package me.jaspr.wemodern;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -34,6 +35,7 @@ final class NotificationChannels {
                 context.getString(R.string.channel_wechat_messages),
                 NotificationManager.IMPORTANCE_HIGH);
         messages.setDescription(context.getString(R.string.channel_wechat_messages_description));
+        setMessageLockscreenVisibility(messages);
         messages.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, audio);
         messages.enableVibration(true);
         if (Build.VERSION.SDK_INT == 29) {
@@ -46,6 +48,7 @@ final class NotificationChannels {
         bubbleModeConversations.setDescription(
                 context.getString(
                         R.string.channel_wechat_bubble_mode_conversations_description));
+        setMessageLockscreenVisibility(bubbleModeConversations);
         bubbleModeConversations.setSound(null, null);
         bubbleModeConversations.enableVibration(false);
         if (Build.VERSION.SDK_INT == 29) {
@@ -54,7 +57,7 @@ final class NotificationChannels {
         NotificationChannel bubbleHost = new NotificationChannel(
                 WECHAT_BUBBLE_HOST,
                 context.getString(R.string.channel_wechat_bubble_host),
-                NotificationManager.IMPORTANCE_HIGH);
+                bubbleHostDefaultImportance());
         bubbleHost.setDescription(
                 context.getString(R.string.channel_wechat_bubble_host_description));
         bubbleHost.setSound(null, null);
@@ -82,21 +85,38 @@ final class NotificationChannels {
         nm.createNotificationChannel(status);
     }
 
-    static String messageChannelId(Context context) {
+    static String messageChannelId(Context context, String conversationId) {
         boolean bubbleReady = ChatBubbleBehavior.isReady(
                 ChatBubbleBehavior.isEnabled(context),
                 ChatBubbleBehavior.isSystemAllowed(context)
         );
-        return messageChannelId(bubbleReady);
+        boolean conversationEnabled =
+                ConversationBubblePreferences.isEnabled(context, conversationId);
+        return messageChannelId(bubbleReady, conversationEnabled);
     }
 
-    static String messageChannelId(boolean bubbleReady) {
-        return bubbleReady ? WECHAT_BUBBLE_MODE_CONVERSATIONS : WECHAT_MESSAGES;
+    static String messageChannelId(boolean bubbleReady, boolean conversationEnabled) {
+        return bubbleReady && conversationEnabled
+                ? WECHAT_BUBBLE_MODE_CONVERSATIONS
+                : WECHAT_MESSAGES;
     }
 
     static boolean isMessageChannel(String channelId) {
         return WECHAT_MESSAGES.equals(channelId)
                 || WECHAT_BUBBLE_MODE_CONVERSATIONS.equals(channelId);
+    }
+
+    static int messageLockscreenVisibility() {
+        return Notification.VISIBILITY_PUBLIC;
+    }
+
+    static int bubbleHostDefaultImportance() {
+        return NotificationManager.IMPORTANCE_MIN;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void setMessageLockscreenVisibility(NotificationChannel channel) {
+        channel.setLockscreenVisibility(messageLockscreenVisibility());
     }
 
     static boolean isBubbleHostNotificationMinimized(Context context) {

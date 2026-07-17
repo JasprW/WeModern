@@ -10,7 +10,7 @@ Android users who install WeModern to modernize WeChat notifications, per-conver
 
 ## Product Purpose
 
-WeModern rewrites WeChat message and call notifications for newer Android versions. Message notifications can become native Android conversation bubbles, with a compact recent-message view and an explicit handoff to the original WeChat conversation. Bubble-ready messages use a low-importance quiet channel so the collapsed bubble preview, rather than a heads-up text notification, is the interruptive surface. The experimental Bubble trampoline keeps one stable bubble for the latest conversation and opens WeChat Home inside it only after the user taps the bubble, while ordinary rewritten notifications continue to follow synchronous removal. The app UI exists to guide setup, verify that the notification service is working, expose optional reliability features, and provide lightweight tests. Success means a user can reach a working state without having to interpret Android permission terminology or duplicate status panels.
+WeModern rewrites WeChat message and call notifications for newer Android versions. Message notifications can become native Android conversation bubbles, with a compact recent-message view and an explicit handoff to the original WeChat conversation. Bubble-ready messages use a low-importance quiet channel so the collapsed bubble preview, rather than a heads-up text notification, is the interruptive surface. The experimental Bubble trampoline keeps one stable bubble for the latest conversation and opens WeChat Home inside it only after the user taps the bubble; its host notification is silent and minimized by default so it does not add a duplicate status-bar icon, while ordinary rewritten notifications continue to follow synchronous removal. The app UI exists to guide setup, verify that the notification service is working, expose optional reliability features, and provide lightweight tests. Success means a user can reach a working state without having to interpret Android permission terminology or duplicate status panels.
 
 ## Brand Personality
 
@@ -27,7 +27,8 @@ Avoid dense developer dashboards, giant repeated cards, disabled controls used a
 3. Separate required setup, recommended reliability improvements, and advanced ADB features.
 4. Show each fact once; completed steps become compact status rows, not disabled buttons.
 5. Keep testing available but visually secondary to setup and health.
-6. Keep WeModern's Chat bubbles feature switch distinct from Android's None, Selected, and All bubble permissions. Both must be ready before dependent options are enabled, and normal notifications must remain useful when either layer is off.
+6. Keep Android's None, Selected, and All bubble permission in Setup, distinct from WeModern's Chat bubbles feature switch. The system permission must be allowed before the feature switch can be enabled; dependent options remain hidden until both layers are ready, and normal notifications must remain useful when either layer is off.
+7. Treat private/group bubble defaults and per-conversation overrides as primary settings in both normal and trampoline modes. Disabled conversations must retain heads-up notifications while being unable to create, update, or take over a bubble. Conversation notifications request full lock-screen visibility by default while respecting user-controlled Android settings. Clearly explain that conversation identity depends on the source name supplied by WeChat notifications.
 
 ## Accessibility & Inclusion
 

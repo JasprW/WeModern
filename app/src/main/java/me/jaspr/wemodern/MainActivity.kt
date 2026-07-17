@@ -9,6 +9,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.net.Uri
@@ -23,11 +24,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -63,9 +65,11 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
@@ -75,6 +79,8 @@ import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroup
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -82,6 +88,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -106,7 +113,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -118,15 +127,24 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var setupState by mutableStateOf(SetupState())
+    private val conversationPreferencesListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            setupState = readSetupState()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ConversationBubblePreferences.registerListener(
+            this,
+            conversationPreferencesListener,
+        )
         enableEdgeToEdge()
         NotificationChannels.ensure(this)
         getSystemService(NotificationManager::class.java).apply {
@@ -161,8 +179,14 @@ class MainActivity : ComponentActivity() {
                         setupState = readSetupState()
                     },
                     onSetChatBubblesEnabled = { enabled ->
-                        ChatBubbleBehavior.setEnabled(this, enabled)
-                        if (!enabled) BubbleTrampolineBehavior.setEnabled(this, false)
+                        val canEnable = ChatBubbleBehavior.canEnable(
+                            setupState.coreReady,
+                            setupState.chatBubblesSystemAllowed,
+                        )
+                        ChatBubbleBehavior.setEnabled(this, enabled && canEnable)
+                        if (!enabled || !canEnable) {
+                            BubbleTrampolineBehavior.setEnabled(this, false)
+                        }
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
                         if (enabled && !setupState.chatBubblesSystemAllowed) {
@@ -173,6 +197,29 @@ class MainActivity : ComponentActivity() {
                         BubbleTrampolineBehavior.setEnabled(
                             this,
                             enabled && setupState.bubbleTrampolineCanBeSet,
+                        )
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                    },
+                    onSetDefaultPrivateBubblesEnabled = { enabled ->
+                        ConversationBubblePreferences.setDefaultPrivateEnabled(this, enabled)
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                    },
+                    onSetDefaultGroupBubblesEnabled = { enabled ->
+                        ConversationBubblePreferences.setDefaultGroupEnabled(this, enabled)
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                    },
+                    onSetConversationSortOrder = { sortOrder ->
+                        ConversationBubblePreferences.setSortOrder(this, sortOrder)
+                        setupState = readSetupState()
+                    },
+                    onSetConversationBubbleOverride = { conversationId, override ->
+                        ConversationBubblePreferences.setOverride(
+                            this,
+                            conversationId,
+                            override,
                         )
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
@@ -201,6 +248,14 @@ class MainActivity : ComponentActivity() {
         setupState = readSetupState()
     }
 
+    override fun onDestroy() {
+        ConversationBubblePreferences.unregisterListener(
+            this,
+            conversationPreferencesListener,
+        )
+        super.onDestroy()
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -213,9 +268,15 @@ class MainActivity : ComponentActivity() {
     private fun readSetupState(): SetupState {
         val notificationListenerEnabled = isListenerEnabled()
         val postNotificationsGranted = hasPostNotificationPermission()
-        val chatBubblesEnabled = ChatBubbleBehavior.isEnabled(this)
         val chatBubblesSystemAllowed = ChatBubbleBehavior.isSystemAllowed(this)
         val coreReady = notificationListenerEnabled && postNotificationsGranted
+        var chatBubblesEnabled = ChatBubbleBehavior.isEnabled(this)
+        var bubbleSettingsChanged = false
+        if (chatBubblesEnabled && !chatBubblesSystemAllowed) {
+            ChatBubbleBehavior.setEnabled(this, false)
+            chatBubblesEnabled = false
+            bubbleSettingsChanged = true
+        }
         if ((!notificationListenerEnabled || !postNotificationsGranted) &&
             AppIconBehavior.isOpenWeChatEnabled(this)
         ) {
@@ -228,6 +289,10 @@ class MainActivity : ComponentActivity() {
             ) && BubbleTrampolineBehavior.isEnabled(this)
         ) {
             BubbleTrampolineBehavior.setEnabled(this, false)
+            bubbleSettingsChanged = true
+        }
+        if (bubbleSettingsChanged) {
+            ConversationBubbles.syncActiveNotifications(this)
         }
         return SetupState(
             notificationListenerEnabled = notificationListenerEnabled,
@@ -240,6 +305,12 @@ class MainActivity : ComponentActivity() {
                 NotificationChannels.areBubbleHostNotificationsDisabled(this),
             chatBubblesEnabled = chatBubblesEnabled,
             chatBubblesSystemAllowed = chatBubblesSystemAllowed,
+            defaultPrivateBubblesEnabled =
+                ConversationBubblePreferences.isDefaultPrivateEnabled(this),
+            defaultGroupBubblesEnabled =
+                ConversationBubblePreferences.isDefaultGroupEnabled(this),
+            conversationSortOrder = ConversationBubblePreferences.getSortOrder(this),
+            conversations = ConversationBubblePreferences.getConversations(this),
             promotedNotificationsAllowed = canPostPromotedNotifications(),
             batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
             readLogsGranted = hasReadLogsPermission(),
@@ -464,7 +535,10 @@ class MainActivity : ComponentActivity() {
             contentIntent,
         )
         ConversationBubbleStore.update(bubbleState)
-        val builder = Notification.Builder(this, NotificationChannels.messageChannelId(this))
+        val builder = Notification.Builder(
+            this,
+            NotificationChannels.messageChannelId(this, MessageTestNotifications.SHORTCUT_ID),
+        )
             .setSmallIcon(smallIcon)
             .setLargeIcon(senderAvatar)
             .setContentTitle(getString(R.string.test_message_sender))
@@ -475,6 +549,7 @@ class MainActivity : ComponentActivity() {
             .setDefaults(Notification.DEFAULT_ALL)
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_MESSAGE)
+            .setVisibility(NotificationChannels.messageLockscreenVisibility())
             .setColor(0xff33b332.toInt())
             .setContentIntent(contentIntent)
             .setShortcutId(MessageTestNotifications.SHORTCUT_ID)
@@ -555,6 +630,11 @@ private data class SetupState(
     val bubbleHostNotificationsDisabled: Boolean = false,
     val chatBubblesEnabled: Boolean = false,
     val chatBubblesSystemAllowed: Boolean = false,
+    val defaultPrivateBubblesEnabled: Boolean = true,
+    val defaultGroupBubblesEnabled: Boolean = true,
+    val conversationSortOrder: ConversationBubblePreferences.SortOrder =
+        ConversationBubblePreferences.SortOrder.RECENT,
+    val conversations: List<ConversationBubblePreferences.Entry> = emptyList(),
     val promotedNotificationsAllowed: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
@@ -578,6 +658,9 @@ private data class SetupState(
 
     val chatBubblesAvailable: Boolean
         get() = ChatBubbleBehavior.isSupported(Build.VERSION.SDK_INT)
+
+    val chatBubblesCanBeEnabled: Boolean
+        get() = ChatBubbleBehavior.canEnable(coreReady, chatBubblesSystemAllowed)
 
     val chatBubblesReady: Boolean
         get() = coreReady &&
@@ -623,6 +706,13 @@ private fun WeModernApp(
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
+    onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
+    onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
+    onSetConversationSortOrder: (ConversationBubblePreferences.SortOrder) -> Unit,
+    onSetConversationBubbleOverride: (
+        String,
+        ConversationBubblePreferences.Override,
+    ) -> Unit,
     onCopySyncCommands: () -> Unit,
     onPostMessageTest: () -> Unit,
     onPostVoiceCallTest: () -> Unit,
@@ -635,8 +725,9 @@ private fun WeModernApp(
     val videoSentText = stringResource(R.string.snackbar_test_video_sent)
     val commandsCopiedText = stringResource(R.string.snackbar_sync_commands_copied)
     var syncExpanded by remember { mutableStateOf(false) }
-    var chatBubblesExpanded by remember { mutableStateOf(false) }
     var showAppIconShortcutTip by remember { mutableStateOf(false) }
+    var showConversationSettings by remember { mutableStateOf(false) }
+    var selectedConversationId by remember { mutableStateOf<String?>(null) }
     val appIconShortcutTipSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val dismissAppIconShortcutTip: () -> Unit = {
         coroutineScope.launch {
@@ -699,28 +790,38 @@ private fun WeModernApp(
                         state = state,
                         onOpenListenerSettings = onOpenListenerSettings,
                         onRequestNotifications = onRequestNotifications,
+                        onOpenChatBubbleSettings = onOpenChatBubbleSettings,
                         onOpenPromotedNotificationSettings = onOpenPromotedNotificationSettings,
                         onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
                     )
                 }
+                if (state.chatBubblesAvailable) {
+                    item {
+                        BubbleSection(
+                            state = state,
+                            onSetChatBubblesEnabled = onSetChatBubblesEnabled,
+                            onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
+                            onOpenBubbleHostChannelSettings =
+                                onOpenBubbleHostChannelSettings,
+                            onSetDefaultPrivateBubblesEnabled =
+                                onSetDefaultPrivateBubblesEnabled,
+                            onSetDefaultGroupBubblesEnabled =
+                                onSetDefaultGroupBubblesEnabled,
+                            onOpenConversationSettings = {
+                                showConversationSettings = true
+                            },
+                        )
+                    }
+                }
                 item {
                     AdvancedSection(
                         state = state,
-                        chatBubblesExpanded = chatBubblesExpanded,
                         syncExpanded = syncExpanded,
                         syncCommands = syncCommands,
                         onSetAppIconOpensWeChat = { enabled ->
                             onSetAppIconOpensWeChat(enabled)
                             if (enabled) showAppIconShortcutTip = true
                         },
-                        onSetChatBubblesEnabled = onSetChatBubblesEnabled,
-                        onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
-                        onToggleChatBubblesExpanded = {
-                            chatBubblesExpanded = !chatBubblesExpanded
-                        },
-                        onOpenChatBubbleSettings = onOpenChatBubbleSettings,
-                        onOpenBubbleHostChannelSettings =
-                            onOpenBubbleHostChannelSettings,
                         onToggleSyncExpanded = { syncExpanded = !syncExpanded },
                         onCopySyncCommands = {
                             onCopySyncCommands()
@@ -793,6 +894,40 @@ private fun WeModernApp(
                     Text(stringResource(R.string.action_got_it))
                 }
             }
+        }
+    }
+
+    if (showConversationSettings) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showConversationSettings = false
+                selectedConversationId = null
+            },
+        ) {
+            ConversationSettingsSheet(
+                state = state,
+                onSetConversationSortOrder = onSetConversationSortOrder,
+                onSelectConversation = { selectedConversationId = it },
+            )
+        }
+    }
+
+    val selectedConversation = selectedConversationId?.let { conversationId ->
+        state.conversations.firstOrNull { it.id == conversationId }
+    }
+    if (selectedConversation != null) {
+        ModalBottomSheet(onDismissRequest = { selectedConversationId = null }) {
+            ConversationOverrideSheet(
+                conversation = selectedConversation,
+                defaultEnabled = if (selectedConversation.isGroupConversation) {
+                    state.defaultGroupBubblesEnabled
+                } else {
+                    state.defaultPrivateBubblesEnabled
+                },
+                onSelect = { override ->
+                    onSetConversationBubbleOverride(selectedConversation.id, override)
+                },
+            )
         }
     }
 }
@@ -960,6 +1095,7 @@ private fun SettingsSection(
     state: SetupState,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
+    onOpenChatBubbleSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
 ) {
@@ -1004,6 +1140,38 @@ private fun SettingsSection(
                 shape = middleShape,
                 onClick = if (state.postNotificationsGranted) null else onRequestNotifications,
             )
+            if (state.chatBubblesAvailable) {
+                SettingRow(
+                    title = stringResource(R.string.chat_bubbles_system_title),
+                    supporting = stringResource(
+                        if (state.chatBubblesSystemAllowed) {
+                            R.string.chat_bubbles_system_allowed_description
+                        } else {
+                            R.string.chat_bubbles_system_required_description
+                        }
+                    ),
+                    icon = Icons.Rounded.ChatBubble,
+                    status = stringResource(
+                        if (state.chatBubblesSystemAllowed) {
+                            R.string.setup_status_enabled
+                        } else {
+                            R.string.setup_status_pending
+                        }
+                    ),
+                    statusTone = if (state.chatBubblesSystemAllowed) {
+                        SetupStatusTone.Success
+                    } else {
+                        SetupStatusTone.Attention
+                    },
+                    highlighted = false,
+                    shape = middleShape,
+                    onClick = if (state.chatBubblesSystemAllowed) {
+                        null
+                    } else {
+                        onOpenChatBubbleSettings
+                    },
+                )
+            }
             if (state.liveUpdatesAvailable) {
                 val liveUpdateBlocked = !state.postNotificationsGranted
                 SettingRow(
@@ -1072,28 +1240,7 @@ private fun SettingRow(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                modifier = Modifier.size(48.dp),
-                shape = RoundedCornerShape(17.dp),
-                color = if (highlighted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                },
-                contentColor = if (highlighted) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
+            OptionLeadingIcon(icon = icon)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -1201,17 +1348,736 @@ private fun SectionHeader(title: String, supporting: String? = null) {
 }
 
 @Composable
+private fun BubbleSection(
+    state: SetupState,
+    onSetChatBubblesEnabled: (Boolean) -> Unit,
+    onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
+    onOpenBubbleHostChannelSettings: () -> Unit,
+    onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
+    onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
+    onOpenConversationSettings: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(
+            title = stringResource(R.string.section_bubbles),
+            supporting = stringResource(
+                if (state.chatBubblesReady) {
+                    R.string.setup_status_enabled
+                } else {
+                    R.string.setup_status_missing
+                }
+            ),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            BubbleSwitchCard(
+                title = stringResource(R.string.chat_bubbles_enable_title),
+                supporting = stringResource(
+                    when {
+                        !state.coreReady -> R.string.chat_bubbles_locked_description
+                        !state.chatBubblesSystemAllowed -> {
+                            R.string.chat_bubbles_system_enable_required_description
+                        }
+                        state.chatBubblesEnabled -> R.string.chat_bubbles_enabled_description
+                        else -> R.string.chat_bubbles_disabled_description
+                    }
+                ),
+                icon = Icons.Rounded.ChatBubble,
+                checked = state.chatBubblesEnabled,
+                enabled = state.chatBubblesCanBeEnabled || state.chatBubblesEnabled,
+                onCheckedChange = onSetChatBubblesEnabled,
+            )
+
+            if (state.chatBubblesReady) {
+                if (state.bubbleTrampolineAvailable) {
+                    BubbleSwitchCard(
+                        title = stringResource(R.string.bubble_trampoline_title),
+                        supporting = stringResource(R.string.bubble_trampoline_description),
+                        icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                        checked = state.bubbleTrampolineEnabled,
+                        enabled = state.bubbleTrampolineCanBeSet,
+                        onCheckedChange = onSetBubbleTrampolineEnabled,
+                    )
+                }
+
+                if (state.bubbleTrampolineEnabled) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onOpenBubbleHostChannelSettings,
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OptionLeadingIcon(icon = Icons.Rounded.Notifications)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.bubble_host_channel_optimization_title
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        when {
+                                            state.bubbleHostNotificationMinimized -> {
+                                                R.string.bubble_host_channel_optimized_description
+                                            }
+                                            state.bubbleHostNotificationsDisabled -> {
+                                                R.string.bubble_host_channel_disabled_description
+                                            }
+                                            else -> {
+                                                R.string.bubble_host_channel_optimization_recommendation
+                                            }
+                                        }
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Icon(
+                                imageVector = if (state.bubbleHostNotificationMinimized) {
+                                    Icons.Rounded.CheckCircle
+                                } else {
+                                    Icons.Rounded.ChevronRight
+                                },
+                                contentDescription = null,
+                                tint = if (state.bubbleHostNotificationMinimized) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
+                }
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                ) {
+                    Column {
+                        Column(
+                            modifier = Modifier.padding(
+                                start = 20.dp,
+                                top = 20.dp,
+                                end = 20.dp,
+                                bottom = 12.dp,
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.bubble_defaults_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = stringResource(R.string.bubble_defaults_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        BubbleDefaultRow(
+                            title = stringResource(R.string.bubble_default_private_title),
+                            supporting = stringResource(
+                                R.string.bubble_default_private_description
+                            ),
+                            icon = Icons.Rounded.Person,
+                            checked = state.defaultPrivateBubblesEnabled,
+                            onCheckedChange = onSetDefaultPrivateBubblesEnabled,
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                        BubbleDefaultRow(
+                            title = stringResource(R.string.bubble_default_group_title),
+                            supporting = stringResource(
+                                R.string.bubble_default_group_description
+                            ),
+                            icon = Icons.Rounded.Group,
+                            checked = state.defaultGroupBubblesEnabled,
+                            onCheckedChange = onSetDefaultGroupBubblesEnabled,
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                        BubbleConversationSettingsRow(
+                            title = stringResource(R.string.bubble_per_conversation_title),
+                            supporting = stringResource(
+                                R.string.bubble_per_conversation_description
+                            ),
+                            onClick = onOpenConversationSettings,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BubbleSwitchCard(
+    title: String,
+    supporting: String,
+    icon: ImageVector,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = checked,
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onValueChange = onCheckedChange,
+                )
+                .semantics(mergeDescendants = true) {}
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OptionLeadingIcon(icon = icon)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = checked, enabled = enabled, onCheckedChange = null)
+        }
+    }
+}
+
+@Composable
+private fun OptionLeadingIcon(icon: ImageVector) {
+    Surface(
+        modifier = Modifier.size(48.dp),
+        shape = RoundedCornerShape(17.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BubbleDefaultRow(
+    title: String,
+    supporting: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun BubbleConversationSettingsRow(
+    title: String,
+    supporting: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Notifications,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ConversationSettingsSheet(
+    state: SetupState,
+    onSetConversationSortOrder: (ConversationBubblePreferences.SortOrder) -> Unit,
+    onSelectConversation: (String) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text(
+                text = stringResource(R.string.bubble_per_conversation_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        item {
+            Text(
+                text = stringResource(R.string.bubble_per_conversation_sheet_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        item {
+            BubbleIdentityWarning()
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.bubble_known_conversations_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                BubbleSortButtonGroup(
+                    selected = state.conversationSortOrder,
+                    onSelected = onSetConversationSortOrder,
+                )
+            }
+        }
+        if (state.conversations.isEmpty()) {
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    Text(
+                        modifier = Modifier.padding(20.dp),
+                        text = stringResource(R.string.bubble_no_known_conversations),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    Column {
+                        state.conversations.forEachIndexed { index, conversation ->
+                            if (index > 0) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                )
+                            }
+                            ConversationBubbleRow(
+                                conversation = conversation,
+                                showNotificationCount = state.conversationSortOrder ==
+                                    ConversationBubblePreferences.SortOrder.COUNT,
+                                defaultEnabled = if (conversation.isGroupConversation) {
+                                    state.defaultGroupBubblesEnabled
+                                } else {
+                                    state.defaultPrivateBubblesEnabled
+                                },
+                                onClick = { onSelectConversation(conversation.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BubbleIdentityWarning() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Info,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = stringResource(R.string.bubble_identity_warning),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BubbleSortButtonGroup(
+    selected: ConversationBubblePreferences.SortOrder,
+    onSelected: (ConversationBubblePreferences.SortOrder) -> Unit,
+) {
+    val recentSelected = selected == ConversationBubblePreferences.SortOrder.RECENT
+    val countSelected = selected == ConversationBubblePreferences.SortOrder.COUNT
+    val recentLabel = stringResource(R.string.bubble_sort_recent)
+    val countLabel = stringResource(R.string.bubble_sort_count)
+    ButtonGroup(
+        overflowIndicator = { menuState ->
+            ButtonGroupDefaults.OverflowIndicator(menuState)
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        toggleableItem(
+            checked = recentSelected,
+            label = recentLabel,
+            onCheckedChange = { checked ->
+                if (checked && !recentSelected) {
+                    onSelected(ConversationBubblePreferences.SortOrder.RECENT)
+                }
+            },
+            icon = if (recentSelected) {
+                {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            } else {
+                null
+            },
+            weight = 1f,
+        )
+        toggleableItem(
+            checked = countSelected,
+            label = countLabel,
+            onCheckedChange = { checked ->
+                if (checked && !countSelected) {
+                    onSelected(ConversationBubblePreferences.SortOrder.COUNT)
+                }
+            },
+            icon = if (countSelected) {
+                {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            } else {
+                null
+            },
+            weight = 1f,
+        )
+    }
+}
+
+@Composable
+private fun ConversationBubbleRow(
+    conversation: ConversationBubblePreferences.Entry,
+    showNotificationCount: Boolean,
+    defaultEnabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    val avatar = remember(conversation.id, conversation.avatarRevision) {
+        ConversationShortcuts.loadConversationAvatar(context, conversation.id)?.asImageBitmap()
+    }
+    val conversationType = stringResource(
+        if (conversation.isGroupConversation) {
+            R.string.bubble_conversation_type_group
+        } else {
+            R.string.bubble_conversation_type_private
+        }
+    )
+    val conversationDetail = if (showNotificationCount) {
+        val count = conversation.notificationCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        stringResource(
+            R.string.bubble_conversation_type_with_count,
+            conversationType,
+            pluralStringResource(
+                R.plurals.bubble_notification_count,
+                count,
+                count,
+            ),
+        )
+    } else {
+        conversationType
+    }
+    val currentSettingsLabel = when (conversation.override) {
+        ConversationBubblePreferences.Override.DEFAULT -> stringResource(
+            R.string.bubble_conversation_uses_default,
+            stringResource(
+                if (defaultEnabled) R.string.bubble_conversation_override_enabled
+                else R.string.bubble_conversation_override_disabled
+            ),
+        )
+        ConversationBubblePreferences.Override.ENABLED ->
+            stringResource(R.string.bubble_conversation_override_enabled)
+        ConversationBubblePreferences.Override.DISABLED ->
+            stringResource(R.string.bubble_conversation_override_disabled)
+    }
+    val currentSettingsColor = when (conversation.override) {
+        ConversationBubblePreferences.Override.DEFAULT ->
+            MaterialTheme.colorScheme.onSurfaceVariant
+        ConversationBubblePreferences.Override.ENABLED ->
+            MaterialTheme.colorScheme.primary
+        ConversationBubblePreferences.Override.DISABLED ->
+            MaterialTheme.colorScheme.error
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) {}
+            .padding(start = 16.dp, end = 20.dp, top = 12.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ) {
+            if (avatar != null) {
+                Image(
+                    bitmap = avatar,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = conversation.title.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = conversation.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Text(
+                text = conversationDetail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        Text(
+            text = currentSettingsLabel,
+            modifier = Modifier.widthIn(min = 72.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = currentSettingsColor,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ConversationOverrideSheet(
+    conversation: ConversationBubblePreferences.Entry,
+    defaultEnabled: Boolean,
+    onSelect: (ConversationBubblePreferences.Override) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = conversation.title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = stringResource(R.string.bubble_conversation_sheet_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ConversationOverrideOption(
+                title = stringResource(R.string.bubble_override_default_title),
+                supporting = stringResource(
+                    if (conversation.isGroupConversation) {
+                        R.string.bubble_override_default_group_description
+                    } else {
+                        R.string.bubble_override_default_private_description
+                    },
+                    stringResource(
+                        if (defaultEnabled) R.string.setup_status_enabled
+                        else R.string.setup_status_missing
+                    ),
+                ),
+                selected = conversation.override ==
+                        ConversationBubblePreferences.Override.DEFAULT,
+                onClick = { onSelect(ConversationBubblePreferences.Override.DEFAULT) },
+            )
+            ConversationOverrideOption(
+                title = stringResource(R.string.bubble_override_enabled_title),
+                supporting = stringResource(R.string.bubble_override_enabled_description),
+                selected = conversation.override ==
+                        ConversationBubblePreferences.Override.ENABLED,
+                onClick = { onSelect(ConversationBubblePreferences.Override.ENABLED) },
+            )
+            ConversationOverrideOption(
+                title = stringResource(R.string.bubble_override_disabled_title),
+                supporting = stringResource(R.string.bubble_override_disabled_description),
+                selected = conversation.override ==
+                        ConversationBubblePreferences.Override.DISABLED,
+                onClick = { onSelect(ConversationBubblePreferences.Override.DISABLED) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationOverrideOption(
+    title: String,
+    supporting: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(selected = selected, onClick = null)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun AdvancedSection(
     state: SetupState,
-    chatBubblesExpanded: Boolean,
     syncExpanded: Boolean,
     syncCommands: String,
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
-    onSetChatBubblesEnabled: (Boolean) -> Unit,
-    onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
-    onToggleChatBubblesExpanded: () -> Unit,
-    onOpenChatBubbleSettings: () -> Unit,
-    onOpenBubbleHostChannelSettings: () -> Unit,
     onToggleSyncExpanded: () -> Unit,
     onCopySyncCommands: () -> Unit,
 ) {
@@ -1227,8 +2093,6 @@ private fun AdvancedSection(
         bottomStart = 28.dp,
         bottomEnd = 28.dp,
     )
-    val middleShape = RoundedCornerShape(12.dp)
-
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(title = stringResource(R.string.section_advanced))
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1251,20 +2115,7 @@ private fun AdvancedSection(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        modifier = Modifier.size(48.dp),
-                        shape = RoundedCornerShape(17.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.TouchApp,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
+                    OptionLeadingIcon(icon = Icons.Rounded.TouchApp)
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -1294,433 +2145,6 @@ private fun AdvancedSection(
                     )
                 }
             }
-            if (state.chatBubblesAvailable) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = middleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                ) {
-                    Column {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = onToggleChatBubblesExpanded)
-                                .semantics(mergeDescendants = true) {}
-                                .padding(horizontal = 20.dp, vertical = 20.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(48.dp),
-                                shape = RoundedCornerShape(17.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ChatBubble,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            }
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.chat_bubbles_title),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    text = stringResource(R.string.chat_bubbles_description),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Text(
-                                text = stringResource(
-                                    when {
-                                        !state.chatBubblesEnabled -> R.string.setup_status_missing
-                                        !state.coreReady -> {
-                                            R.string.setup_status_requires_notifications
-                                        }
-                                        !state.chatBubblesSystemAllowed -> R.string.setup_status_pending
-                                        else -> R.string.setup_status_enabled
-                                    }
-                                ),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = when {
-                                    state.chatBubblesReady -> MaterialTheme.colorScheme.primary
-                                    state.chatBubblesEnabled -> MaterialTheme.colorScheme.tertiary
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                            Icon(
-                                imageVector = if (chatBubblesExpanded) {
-                                    Icons.Rounded.ExpandLess
-                                } else {
-                                    Icons.Rounded.ExpandMore
-                                },
-                                contentDescription = stringResource(
-                                    if (chatBubblesExpanded) {
-                                        R.string.action_collapse
-                                    } else {
-                                        R.string.action_expand
-                                    }
-                                ),
-                            )
-                        }
-
-                        AnimatedVisibility(
-                            visible = chatBubblesExpanded,
-                            enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-                        ) {
-                            Column {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                )
-                                Column(
-                                    modifier = Modifier.padding(20.dp),
-                                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.chat_bubbles_explanation),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(18.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .toggleable(
-                                                    value = state.chatBubblesEnabled,
-                                                    enabled = state.coreReady ||
-                                                            state.chatBubblesEnabled,
-                                                    role = Role.Switch,
-                                                    onValueChange = onSetChatBubblesEnabled,
-                                                )
-                                                .semantics(mergeDescendants = true) {}
-                                                .padding(16.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.ChatBubble,
-                                                contentDescription = null,
-                                                tint = if (state.coreReady ||
-                                                    state.chatBubblesEnabled
-                                                ) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                },
-                                            )
-                                            Column(
-                                                modifier = Modifier.weight(1f),
-                                                verticalArrangement = Arrangement.spacedBy(3.dp),
-                                            ) {
-                                                Text(
-                                                    text = stringResource(
-                                                        R.string.chat_bubbles_enable_title
-                                                    ),
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                )
-                                                Text(
-                                                    text = stringResource(
-                                                        when {
-                                                            !state.coreReady -> {
-                                                                R.string.chat_bubbles_locked_description
-                                                            }
-                                                            state.chatBubblesEnabled -> {
-                                                                R.string.chat_bubbles_enabled_description
-                                                            }
-                                                            else -> {
-                                                                R.string.chat_bubbles_disabled_description
-                                                            }
-                                                        }
-                                                    ),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                            Switch(
-                                                checked = state.chatBubblesEnabled,
-                                                enabled = state.coreReady ||
-                                                        state.chatBubblesEnabled,
-                                                onCheckedChange = null,
-                                            )
-                                        }
-                                    }
-                                    if (state.chatBubblesEnabled) {
-                                        Surface(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(18.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        ) {
-                                            Column(
-                                                modifier = Modifier.padding(16.dp),
-                                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                                            ) {
-                                                Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                                    verticalAlignment = Alignment.Top,
-                                                ) {
-                                                    Icon(
-                                                        imageVector = if (
-                                                            state.chatBubblesSystemAllowed
-                                                        ) {
-                                                            Icons.Rounded.CheckCircle
-                                                        } else {
-                                                            Icons.Rounded.Info
-                                                        },
-                                                        contentDescription = null,
-                                                        tint = if (
-                                                            state.chatBubblesSystemAllowed
-                                                        ) {
-                                                            MaterialTheme.colorScheme.primary
-                                                        } else {
-                                                            MaterialTheme.colorScheme.tertiary
-                                                        },
-                                                    )
-                                                    Column(
-                                                        modifier = Modifier.weight(1f),
-                                                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                                                    ) {
-                                                        Text(
-                                                            text = stringResource(
-                                                                R.string.chat_bubbles_system_title
-                                                            ),
-                                                            style = MaterialTheme.typography.titleSmall,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                        )
-                                                        Text(
-                                                            text = stringResource(
-                                                                if (
-                                                                    state.chatBubblesSystemAllowed
-                                                                ) {
-                                                                    R.string.chat_bubbles_system_allowed_description
-                                                                } else {
-                                                                    R.string.chat_bubbles_system_required_description
-                                                                }
-                                                            ),
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        )
-                                                    }
-                                                }
-                                                Button(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    onClick = onOpenChatBubbleSettings,
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Settings,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
-                                                    )
-                                                    Spacer(Modifier.size(8.dp))
-                                                    Text(
-                                                        stringResource(
-                                                            R.string.action_open_chat_bubble_settings
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if (state.bubbleTrampolineAvailable) {
-                                        val trampolineCanBeSet =
-                                            state.bubbleTrampolineCanBeSet
-                                        Surface(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(18.dp),
-                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        ) {
-                                            Column {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .toggleable(
-                                                            value = state.bubbleTrampolineEnabled,
-                                                            enabled = trampolineCanBeSet,
-                                                            role = Role.Switch,
-                                                            onValueChange =
-                                                                onSetBubbleTrampolineEnabled,
-                                                        )
-                                                        .semantics(mergeDescendants = true) {}
-                                                        .padding(16.dp),
-                                                    horizontalArrangement =
-                                                        Arrangement.spacedBy(12.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                ) {
-                                                    Icon(
-                                                        imageVector =
-                                                            Icons.AutoMirrored.Rounded.OpenInNew,
-                                                        contentDescription = null,
-                                                        tint = if (trampolineCanBeSet) {
-                                                            MaterialTheme.colorScheme.primary
-                                                        } else {
-                                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                                        },
-                                                    )
-                                                    Column(
-                                                        modifier = Modifier.weight(1f),
-                                                        verticalArrangement =
-                                                            Arrangement.spacedBy(3.dp),
-                                                    ) {
-                                                        Text(
-                                                            text = stringResource(
-                                                                R.string.bubble_trampoline_title
-                                                            ),
-                                                            style =
-                                                                MaterialTheme.typography.titleSmall,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                        )
-                                                        Text(
-                                                            text = stringResource(
-                                                                when {
-                                                                    !state.coreReady -> {
-                                                                        R.string.bubble_trampoline_locked_description
-                                                                    }
-                                                                    !state.chatBubblesEnabled -> {
-                                                                        R.string.bubble_trampoline_bubbles_required_description
-                                                                    }
-                                                                    !state.chatBubblesSystemAllowed -> {
-                                                                        R.string.bubble_trampoline_system_required_description
-                                                                    }
-                                                                    else -> {
-                                                                        R.string.bubble_trampoline_description
-                                                                    }
-                                                                }
-                                                            ),
-                                                            style =
-                                                                MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme
-                                                                .onSurfaceVariant,
-                                                        )
-                                                    }
-                                                    Switch(
-                                                        checked = state.bubbleTrampolineEnabled,
-                                                        enabled = trampolineCanBeSet,
-                                                        onCheckedChange = null,
-                                                    )
-                                                }
-                                                AnimatedVisibility(
-                                                    visible = state.bubbleTrampolineEnabled,
-                                                    enter = fadeIn() + expandVertically(
-                                                        expandFrom = Alignment.Top
-                                                    ),
-                                                    exit = fadeOut() + shrinkVertically(
-                                                        shrinkTowards = Alignment.Top
-                                                    ),
-                                                ) {
-                                                    Column {
-                                                        HorizontalDivider(
-                                                            modifier = Modifier.padding(
-                                                                horizontal = 16.dp
-                                                            ),
-                                                            color = MaterialTheme.colorScheme
-                                                                .outlineVariant,
-                                                        )
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .clickable(
-                                                                    onClick =
-                                                                        onOpenBubbleHostChannelSettings
-                                                                )
-                                                                .semantics(
-                                                                    mergeDescendants = true
-                                                                ) {}
-                                                                .padding(16.dp),
-                                                            horizontalArrangement =
-                                                                Arrangement.spacedBy(12.dp),
-                                                            verticalAlignment =
-                                                                Alignment.CenterVertically,
-                                                        ) {
-                                                            Icon(
-                                                                imageVector =
-                                                                    Icons.Rounded.Notifications,
-                                                                contentDescription = null,
-                                                                tint = if (
-                                                                    state.bubbleHostNotificationMinimized
-                                                                ) {
-                                                                    MaterialTheme.colorScheme.primary
-                                                                } else {
-                                                                    MaterialTheme.colorScheme.tertiary
-                                                                },
-                                                            )
-                                                            Column(
-                                                                modifier = Modifier.weight(1f),
-                                                                verticalArrangement =
-                                                                    Arrangement.spacedBy(3.dp),
-                                                            ) {
-                                                                Text(
-                                                                    text = stringResource(
-                                                                        R.string.bubble_host_channel_optimization_title
-                                                                    ),
-                                                                    style = MaterialTheme.typography
-                                                                        .titleSmall,
-                                                                    fontWeight = FontWeight.SemiBold,
-                                                                )
-                                                                Text(
-                                                                    text = stringResource(
-                                                                        if (
-                                                                            state.bubbleHostNotificationMinimized
-                                                                        ) {
-                                                                            R.string.bubble_host_channel_optimized_description
-                                                                        } else if (
-                                                                            state.bubbleHostNotificationsDisabled
-                                                                        ) {
-                                                                            R.string.bubble_host_channel_disabled_description
-                                                                        } else {
-                                                                            R.string.bubble_host_channel_optimization_recommendation
-                                                                        }
-                                                                    ),
-                                                                    style = MaterialTheme.typography
-                                                                        .bodySmall,
-                                                                    color = MaterialTheme.colorScheme
-                                                                        .onSurfaceVariant,
-                                                                )
-                                                            }
-                                                            Icon(
-                                                                imageVector = if (
-                                                                    state.bubbleHostNotificationMinimized
-                                                                ) {
-                                                                    Icons.Rounded.CheckCircle
-                                                                } else {
-                                                                    Icons.Rounded.ChevronRight
-                                                                },
-                                                                contentDescription = null,
-                                                                tint = if (
-                                                                    state.bubbleHostNotificationMinimized
-                                                                ) {
-                                                                    MaterialTheme.colorScheme.primary
-                                                                } else {
-                                                                    MaterialTheme.colorScheme
-                                                                        .onSurfaceVariant
-                                                                },
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = lastShape,
@@ -1736,20 +2160,7 @@ private fun AdvancedSection(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
-                        modifier = Modifier.size(48.dp),
-                        shape = RoundedCornerShape(17.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.Sync,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
+                    OptionLeadingIcon(icon = Icons.Rounded.Sync)
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(3.dp),

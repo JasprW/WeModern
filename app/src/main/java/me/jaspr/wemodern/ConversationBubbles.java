@@ -62,7 +62,11 @@ final class ConversationBubbles {
     ) {
         if (!shouldApply(
                 Build.VERSION.SDK_INT,
-                ChatBubbleBehavior.isEnabled(context),
+                ChatBubbleBehavior.isEnabled(context)
+                        && ConversationBubblePreferences.isEnabled(
+                                context,
+                                state == null ? null : state.conversationId
+                        ),
                 BubbleTrampolineBehavior.isEnabled(context),
                 state != null,
                 icon != null
@@ -90,12 +94,20 @@ final class ConversationBubbles {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
         boolean enabled = ChatBubbleBehavior.isEnabled(context);
-        boolean trampolineEnabled = enabled && BubbleTrampolineBehavior.isEnabled(context);
+        boolean bubbleReady = ChatBubbleBehavior.isReady(
+                enabled,
+                ChatBubbleBehavior.isSystemAllowed(context)
+        );
+        boolean trampolineEnabled =
+                bubbleReady && BubbleTrampolineBehavior.isEnabled(context);
         if (!trampolineEnabled) {
             TrampolineBubbleHost.clear(context);
         }
         StatusBarNotification[] active = manager.getActiveNotifications();
-        if (active == null) return;
+        if (active == null) {
+            if (trampolineEnabled) TrampolineBubbleHost.clear(context);
+            return;
+        }
 
         StatusBarNotification newestTrampolineSource = null;
         long newestTrampolinePostTime = Long.MIN_VALUE;
@@ -103,6 +115,9 @@ final class ConversationBubbles {
             Notification notification = sbn.getNotification();
             if (!NotificationChannels.isMessageChannel(notification.getChannelId())) continue;
             if (TrampolineBubbleHost.isHostNotificationId(sbn.getId())) continue;
+            boolean groupSummary =
+                    (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
+            if (groupSummary) continue;
 
             String conversationId = notification.getShortcutId();
             ConversationBubbleState state = ConversationBubbleStore.get(conversationId);
@@ -113,7 +128,15 @@ final class ConversationBubbles {
                 icon = Icon.createWithResource(context, R.mipmap.ic_launcher);
             }
             boolean hasBubble = currentBubble != null;
-            boolean groupSummary = (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
+            boolean conversationPreferenceEnabled =
+                    ConversationBubblePreferences.isEnabled(context, conversationId);
+            boolean conversationBubbleEnabled = enabled && conversationPreferenceEnabled;
+            boolean conversationBubbleReady = bubbleReady && conversationPreferenceEnabled;
+            String desiredChannelId = NotificationChannels.messageChannelId(
+                    bubbleReady,
+                    conversationPreferenceEnabled
+            );
+            boolean channelChanged = !desiredChannelId.equals(notification.getChannelId());
 
             if (trampolineEnabled) {
                 if (TrampolineBubbleHost.isEligibleSource(
@@ -121,35 +144,56 @@ final class ConversationBubbles {
                         sbn.getId(),
                         conversationId,
                         groupSummary
-                ) && (newestTrampolineSource == null
+                ) && conversationBubbleReady
+                        && (newestTrampolineSource == null
                         || TrampolineBubbleHost.isNewerSource(
                                 sbn.getPostTime(),
                                 newestTrampolinePostTime))) {
                     newestTrampolineSource = sbn;
                     newestTrampolinePostTime = sbn.getPostTime();
                 }
-                if (!hasBubble) continue;
+                if (!hasBubble && !channelChanged) continue;
                 updateBubbleMetadata(
-                        context, manager, sbn, state, icon, conversationId, false);
+                        context,
+                        manager,
+                        sbn,
+                        state,
+                        icon,
+                        conversationId,
+                        false,
+                        desiredChannelId
+                );
                 continue;
             }
 
             if (!shouldUpdateActiveNotification(
-                    enabled,
+                    conversationBubbleEnabled,
                     conversationId,
                     state != null,
                     icon != null,
                     hasBubble
-            )) continue;
+            ) && !channelChanged) continue;
             updateBubbleMetadata(
-                    context, manager, sbn, state, icon, conversationId, enabled);
+                    context,
+                    manager,
+                    sbn,
+                    state,
+                    icon,
+                    conversationId,
+                    conversationBubbleEnabled,
+                    desiredChannelId
+            );
         }
 
-        if (trampolineEnabled && newestTrampolineSource != null) {
-            TrampolineBubbleHost.syncFromActive(
-                    context,
-                    new StatusBarNotification[] {newestTrampolineSource}
-            );
+        if (trampolineEnabled) {
+            if (newestTrampolineSource != null) {
+                TrampolineBubbleHost.syncFromActive(
+                        context,
+                        new StatusBarNotification[] {newestTrampolineSource}
+                );
+            } else {
+                TrampolineBubbleHost.clear(context);
+            }
         }
     }
 
@@ -161,13 +205,17 @@ final class ConversationBubbles {
             ConversationBubbleState state,
             Icon icon,
             String conversationId,
-            boolean enabled
+            boolean enabled,
+            String channelId
     ) {
         try {
             Notification.Builder builder = Notification.Builder.recoverBuilder(
                     context,
                     sbn.getNotification()
-            );
+            )
+                    .setChannelId(channelId)
+                    .setVisibility(NotificationChannels.messageLockscreenVisibility())
+                    .setOnlyAlertOnce(true);
             if (enabled) {
                 applyTo(context, builder, state, icon, sbn.getId());
             } else {

@@ -21,12 +21,13 @@ public class TrampolineBubbleHostTest {
 
     @Test
     public void hostRequiresReadyTrampolineAndUsableSource() {
-        assertTrue(TrampolineBubbleHost.shouldPost(true, true, true, true, true));
-        assertFalse(TrampolineBubbleHost.shouldPost(false, true, true, true, true));
-        assertFalse(TrampolineBubbleHost.shouldPost(true, false, true, true, true));
-        assertFalse(TrampolineBubbleHost.shouldPost(true, true, false, true, true));
-        assertFalse(TrampolineBubbleHost.shouldPost(true, true, true, false, true));
-        assertFalse(TrampolineBubbleHost.shouldPost(true, true, true, true, false));
+        assertTrue(TrampolineBubbleHost.shouldPost(true, true, true, true, true, true));
+        assertFalse(TrampolineBubbleHost.shouldPost(false, true, true, true, true, true));
+        assertFalse(TrampolineBubbleHost.shouldPost(true, false, true, true, true, true));
+        assertFalse(TrampolineBubbleHost.shouldPost(true, true, false, true, true, true));
+        assertFalse(TrampolineBubbleHost.shouldPost(true, true, true, false, true, true));
+        assertFalse(TrampolineBubbleHost.shouldPost(true, true, true, true, false, true));
+        assertFalse(TrampolineBubbleHost.shouldPost(true, true, true, true, true, false));
     }
 
     @Test

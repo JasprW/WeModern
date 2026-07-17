@@ -5,19 +5,30 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import android.app.Notification;
 import android.app.NotificationManager;
 
 import org.junit.Test;
 
 public class NotificationChannelsTest {
     @Test
-    public void bubbleReadyMessagesUseDedicatedConversationChannel() {
+    public void conversationNotificationsShowFullContentOnLockscreenByDefault() {
+        assertEquals(
+                Notification.VISIBILITY_PUBLIC,
+                NotificationChannels.messageLockscreenVisibility());
+    }
+
+    @Test
+    public void onlyBubbleEligibleConversationsUseQuietChannel() {
         assertEquals(
                 NotificationChannels.WECHAT_MESSAGES,
-                NotificationChannels.messageChannelId(false));
+                NotificationChannels.messageChannelId(false, true));
         assertEquals(
                 NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS,
-                NotificationChannels.messageChannelId(true));
+                NotificationChannels.messageChannelId(true, true));
+        assertEquals(
+                NotificationChannels.WECHAT_MESSAGES,
+                NotificationChannels.messageChannelId(true, false));
         assertNotEquals(
                 NotificationChannels.WECHAT_MESSAGES,
                 NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS);
@@ -44,6 +55,13 @@ public class NotificationChannelsTest {
         assertNotEquals(
                 NotificationChannels.WECHAT_MESSAGES,
                 NotificationChannels.WECHAT_BUBBLE_HOST);
+    }
+
+    @Test
+    public void bubbleHostIsMinimizedByDefault() {
+        assertEquals(
+                NotificationManager.IMPORTANCE_MIN,
+                NotificationChannels.bubbleHostDefaultImportance());
     }
 
     @Test

@@ -9,7 +9,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
-import android.net.Uri;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapShader;
@@ -23,9 +22,8 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Icon;
 import android.os.Build;
+import android.util.AtomicFile;
 import android.util.Log;
-
-import androidx.core.content.FileProvider;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -61,7 +59,7 @@ final class ConversationShortcuts {
     private ConversationShortcuts() {
     }
 
-    static void publish(Context context, String conversationId, CharSequence title, Icon senderIcon,
+    static void publish(Context context, String conversationId, CharSequence title,
                         PendingIntent contentIntent) {
         if (contentIntent == null) {
             Log.w(TAG, "skip conversation shortcut without a direct content intent: "
@@ -78,7 +76,7 @@ final class ConversationShortcuts {
 
         String label = title == null ? "" : title.toString().trim();
         if (label.isEmpty()) label = context.getString(R.string.app_name);
-        Icon currentShortcutIcon = persistIcon(context, conversationId, senderIcon);
+        Icon currentShortcutIcon = loadIcon(context, conversationId);
 
         List<Entry> recent = load(context, maxShortcutCount);
         recent.removeIf(entry -> conversationId.equals(entry.id));
@@ -127,6 +125,68 @@ final class ConversationShortcuts {
     static void registerContentIntent(String conversationId, PendingIntent contentIntent) {
         if (conversationId != null && contentIntent != null) {
             CONTENT_INTENTS.put(conversationId, contentIntent);
+        }
+    }
+
+    static long updateAvatarCache(Context context, String conversationId, Icon source) {
+        if (conversationId == null || conversationId.isEmpty()) return 0L;
+        migrateLegacyShortcutIcons(context);
+        File iconFile = iconFile(context, conversationId);
+        long previousRevision = iconFile.isFile() ? iconFile.lastModified() : 0L;
+        if (source == null) return Math.max(0L, previousRevision);
+        try {
+            Drawable drawable = source.loadDrawable(context);
+            if (drawable == null) return Math.max(0L, previousRevision);
+            Bitmap bitmap = renderAdaptiveIconDrawable(drawable);
+            if (bitmap == null) return Math.max(0L, previousRevision);
+
+            Bitmap cached = iconFile.isFile()
+                    ? BitmapFactory.decodeFile(iconFile.getPath())
+                    : null;
+            if (cached != null && cached.sameAs(bitmap)) {
+                return Math.max(0L, previousRevision);
+            }
+
+            File directory = iconDirectory(context);
+            if (!directory.exists() && !directory.mkdirs()) {
+                Log.w(TAG, "failed to create conversation avatar directory");
+                return Math.max(0L, previousRevision);
+            }
+            writeBitmap(iconFile, bitmap);
+            long revision = Math.max(System.currentTimeMillis(), previousRevision + 1L);
+            if (!iconFile.setLastModified(revision)) {
+                Log.w(TAG, "failed to update conversation avatar revision: " + conversationId);
+            }
+            return revision;
+        } catch (IOException | RuntimeException e) {
+            Log.w(TAG, "failed to update conversation avatar cache", e);
+            return Math.max(0L, previousRevision);
+        }
+    }
+
+    static Bitmap loadConversationAvatar(Context context, String conversationId) {
+        if (conversationId == null || conversationId.isEmpty()) return null;
+        Bitmap cached = BitmapFactory.decodeFile(iconFile(context, conversationId).getPath());
+        if (cached == null) return null;
+        int width = cached.getWidth();
+        int height = cached.getHeight();
+        if (width <= 0 || height <= 0) return null;
+        int horizontalInset = Math.max(0, Math.round(width / 6f));
+        int verticalInset = Math.max(0, Math.round(height / 6f));
+        int croppedWidth = width - horizontalInset * 2;
+        int croppedHeight = height - verticalInset * 2;
+        if (croppedWidth <= 0 || croppedHeight <= 0) return cached;
+        try {
+            return Bitmap.createBitmap(
+                    cached,
+                    horizontalInset,
+                    verticalInset,
+                    croppedWidth,
+                    croppedHeight
+            );
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "failed to crop cached conversation avatar", e);
+            return cached;
         }
     }
 
@@ -337,41 +397,14 @@ final class ConversationShortcuts {
                 MAX_VISIBLE_LAUNCHER_SHORTCUTS);
     }
 
-    private static Icon persistIcon(Context context, String conversationId, Icon source) {
-        if (source == null) return null;
-        try {
-            Drawable drawable = source.loadDrawable(context);
-            if (drawable == null) return null;
-            Bitmap bitmap = renderAdaptiveIconDrawable(drawable);
-            if (bitmap == null) return null;
-
-            File directory = iconDirectory(context);
-            if (!directory.exists() && !directory.mkdirs()) {
-                Log.w(TAG, "failed to create conversation shortcut icon directory");
-                return null;
-            }
-            File iconFile = iconFile(context, conversationId);
-            writeBitmap(iconFile, bitmap);
-            return iconForFile(context, iconFile);
-        } catch (IOException | RuntimeException e) {
-            Log.w(TAG, "failed to persist conversation shortcut icon", e);
-            return null;
-        }
-    }
-
     private static Icon loadIcon(Context context, String conversationId) {
         File iconFile = iconFile(context, conversationId);
-        return iconFile.isFile() ? iconForFile(context, iconFile) : null;
+        return iconFile.isFile() ? iconForFile(iconFile) : null;
     }
 
-    private static Icon iconForFile(Context context, File iconFile) {
-        if (Build.VERSION.SDK_INT < 30) {
-            Bitmap bitmap = BitmapFactory.decodeFile(iconFile.getPath());
-            return bitmap == null ? null : Icon.createWithAdaptiveBitmap(bitmap);
-        }
-        Uri iconUri = FileProvider.getUriForFile(
-                context, context.getPackageName() + ".shortcuticons", iconFile);
-        return Icon.createWithAdaptiveBitmapContentUri(iconUri);
+    private static Icon iconForFile(File iconFile) {
+        Bitmap bitmap = BitmapFactory.decodeFile(iconFile.getPath());
+        return bitmap == null ? null : Icon.createWithAdaptiveBitmap(bitmap);
     }
 
     static int[] adaptiveIconBounds(int size) {
@@ -510,14 +543,25 @@ final class ConversationShortcuts {
     }
 
     private static void writeBitmap(File file, Bitmap bitmap) throws IOException {
-        try (FileOutputStream output = new FileOutputStream(file)) {
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
+        AtomicFile atomicFile = new AtomicFile(file);
+        FileOutputStream output = null;
+        try {
+            output = atomicFile.startWrite();
+            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                throw new IOException("failed to encode conversation avatar");
+            }
+            atomicFile.finishWrite(output);
+        } catch (IOException | RuntimeException e) {
+            if (output != null) atomicFile.failWrite(output);
+            throw e;
         }
     }
 
     private static void deleteStaleIcons(Context context, List<Entry> recent) {
         File[] files = iconDirectory(context).listFiles();
         if (files == null) return;
+        List<ConversationBubblePreferences.Entry> knownConversations =
+                ConversationBubblePreferences.getConversations(context);
         for (File file : files) {
             if (ICON_FORMAT_MARKER.equals(file.getName())) continue;
             boolean keep = false;
@@ -525,6 +569,14 @@ final class ConversationShortcuts {
                 if (file.equals(iconFile(context, entry.id))) {
                     keep = true;
                     break;
+                }
+            }
+            if (!keep) {
+                for (ConversationBubblePreferences.Entry entry : knownConversations) {
+                    if (file.equals(iconFile(context, entry.getId()))) {
+                        keep = true;
+                        break;
+                    }
                 }
             }
             if (!keep && !file.delete()) {

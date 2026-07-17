@@ -22,6 +22,14 @@ public class ChatBubbleBehaviorTest {
     }
 
     @Test
+    public void enablingRequiresCoreSetupAndAndroidBubbleSetting() {
+        assertFalse(ChatBubbleBehavior.canEnable(false, false));
+        assertFalse(ChatBubbleBehavior.canEnable(true, false));
+        assertFalse(ChatBubbleBehavior.canEnable(false, true));
+        assertTrue(ChatBubbleBehavior.canEnable(true, true));
+    }
+
+    @Test
     public void trampolineRequiresCoreSetupFeatureAndSystemPermission() {
         assertFalse(ChatBubbleBehavior.canUseTrampoline(false, true, true));
         assertFalse(ChatBubbleBehavior.canUseTrampoline(true, false, true));
