@@ -160,8 +160,6 @@
     <string name="test_message_sender">Mia</string>
     <string name="test_message_short">我到樓下了。</string>
     <string name="test_message_long">我把會議資料、充電器和你要的咖啡都帶來了，不著急，我在大廳入口等你。</string>
-    <string name="test_voice_call_title">微信語音通話</string>
-    <string name="test_video_call_title">微信視訊通話</string>
     <string name="test_voice_call_text">語音通話中</string>
     <string name="test_video_call_text">視訊通話中</string>
     <string name="wechat_call_title">微信通話</string>
@@ -170,6 +168,7 @@
     <string name="wechat_incoming_video_call">微信視訊來電</string>
     <string name="call_action_answer">接聽</string>
     <string name="call_action_decline">拒絕</string>
+    <string name="call_action_hang_up">掛斷</string>
     <string name="channel_wechat_messages">微信訊息</string>
     <string name="channel_wechat_messages_description">重寫後的微信訊息通知</string>
     <string name="channel_wechat_bubble_mode_conversations">微信對話通知</string>
@@ -177,6 +176,8 @@
     <string name="channel_wechat_bubble_host">微信泡泡宿主通知</string>
     <string name="channel_wechat_bubble_host_description">用於啟動及更新微信泡泡。預設靜音並最小化；請保持通知開啟。</string>
     <string name="channel_status">狀態</string>
-    <string name="channel_wechat_calls">微信通話</string>
-    <string name="channel_wechat_calls_description">微信通話 Live Update</string>
+    <string name="channel_wechat_incoming_calls">微信來電提醒</string>
+    <string name="channel_wechat_incoming_calls_description">收到微信語音或視像通話邀請時響鈴並震動</string>
+    <string name="channel_wechat_ongoing_calls">微信通話中</string>
+    <string name="channel_wechat_ongoing_calls_description">靜默顯示正在進行的微信語音或視像通話</string>
 </resources>

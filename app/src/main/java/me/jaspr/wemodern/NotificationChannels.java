@@ -5,6 +5,8 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.RingtoneManager;
 import android.os.Build;
 import android.provider.Settings;
 
@@ -14,7 +16,8 @@ final class NotificationChannels {
     // ordinary per-conversation notifications posted while bubble mode is ready.
     static final String WECHAT_BUBBLE_MODE_CONVERSATIONS = "wechat_messages_bubbles_quiet";
     static final String WECHAT_BUBBLE_HOST = "wechat_bubble_host_visual_alerts";
-    static final String WECHAT_CALLS = "wechat_calls_live_quiet";
+    static final String WECHAT_INCOMING_CALLS = "wechat_calls_incoming";
+    static final String WECHAT_ONGOING_CALLS = "wechat_calls_ongoing";
     static final String STATUS = "status_alerts";
 
     private NotificationChannels() {
@@ -26,6 +29,7 @@ final class NotificationChannels {
         nm.deleteNotificationChannel("wechat_messages");
         nm.deleteNotificationChannel("status");
         nm.deleteNotificationChannel("wechat_calls_live");
+        nm.deleteNotificationChannel("wechat_calls_live_quiet");
         AudioAttributes audio = new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -71,17 +75,34 @@ final class NotificationChannels {
                 NotificationManager.IMPORTANCE_HIGH);
         status.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, audio);
         status.enableVibration(true);
-        NotificationChannel calls = new NotificationChannel(
-                WECHAT_CALLS,
-                context.getString(R.string.channel_wechat_calls),
-                NotificationManager.IMPORTANCE_HIGH);
-        calls.setDescription(context.getString(R.string.channel_wechat_calls_description));
-        calls.setSound(null, null);
-        calls.enableVibration(false);
+        AudioAttributes ringtoneAudio = new AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setLegacyStreamType(AudioManager.STREAM_RING)
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .build();
+        NotificationChannel incomingCalls = new NotificationChannel(
+                WECHAT_INCOMING_CALLS,
+                context.getString(R.string.channel_wechat_incoming_calls),
+                incomingCallDefaultImportance());
+        incomingCalls.setDescription(
+                context.getString(R.string.channel_wechat_incoming_calls_description));
+        incomingCalls.setSound(
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                ringtoneAudio);
+        incomingCalls.enableVibration(true);
+        NotificationChannel ongoingCalls = new NotificationChannel(
+                WECHAT_ONGOING_CALLS,
+                context.getString(R.string.channel_wechat_ongoing_calls),
+                ongoingCallDefaultImportance());
+        ongoingCalls.setDescription(
+                context.getString(R.string.channel_wechat_ongoing_calls_description));
+        ongoingCalls.setSound(null, null);
+        ongoingCalls.enableVibration(false);
         nm.createNotificationChannel(messages);
         nm.createNotificationChannel(bubbleModeConversations);
         nm.createNotificationChannel(bubbleHost);
-        nm.createNotificationChannel(calls);
+        nm.createNotificationChannel(incomingCalls);
+        nm.createNotificationChannel(ongoingCalls);
         nm.createNotificationChannel(status);
     }
 
@@ -104,6 +125,19 @@ final class NotificationChannels {
     static boolean isMessageChannel(String channelId) {
         return WECHAT_MESSAGES.equals(channelId)
                 || WECHAT_BUBBLE_MODE_CONVERSATIONS.equals(channelId);
+    }
+
+    static boolean isCallChannel(String channelId) {
+        return WECHAT_INCOMING_CALLS.equals(channelId)
+                || WECHAT_ONGOING_CALLS.equals(channelId);
+    }
+
+    static int incomingCallDefaultImportance() {
+        return NotificationManager.IMPORTANCE_HIGH;
+    }
+
+    static int ongoingCallDefaultImportance() {
+        return NotificationManager.IMPORTANCE_DEFAULT;
     }
 
     static int messageLockscreenVisibility() {

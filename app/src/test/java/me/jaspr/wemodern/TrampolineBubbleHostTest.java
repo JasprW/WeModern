@@ -62,7 +62,7 @@ public class TrampolineBubbleHostTest {
                 "wechat_alice",
                 true));
         assertFalse(TrampolineBubbleHost.isEligibleSource(
-                NotificationChannels.WECHAT_CALLS,
+                NotificationChannels.WECHAT_INCOMING_CALLS,
                 42,
                 "wechat_alice",
                 false));

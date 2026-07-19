@@ -12,8 +12,10 @@ notifications with the notification features available on modern Android.
   later. Each resizable bubble keeps recent messages visible. An experimental
   option instead keeps one bubble for the latest conversation and opens WeChat
   Home directly as that bubble's content.
-- Turns ongoing WeChat voice and video calls into Live Updates with elapsed call
-  time on supported Android versions.
+- Rebuilds incoming WeChat voice and video calls as native `CallStyle`
+  notifications that keep ringing and vibrating until handled, then switches
+  the same notification to a silent, promoted ongoing `CallStyle` with elapsed
+  call time after connection.
 - Keeps rewritten notifications in sync when WeChat removes the originals, with
   optional synchronous removal for the cases Android does not expose normally.
 - Publishes up to three recent conversations and reserves the fourth and final
@@ -28,8 +30,10 @@ WeModern compiles and targets Android 17 (API 37). Unlike the original
 Nevolution-based setup, it is a self-contained app with no separate Nevolution
 platform or decorator plug-in required. It handles modern notification access, sensitive
 notification access, and background `PendingIntent` launch restrictions used by
-recent Android releases. On Android 16 and later, WeChat calls can also appear as
-promoted Live Updates using `Notification.ProgressStyle`.
+recent Android releases. On Android 16 and later, an active WeChat call can
+appear as a promoted ongoing `Notification.CallStyle`; its system Hang up
+action opens the original WeChat call page because WeModern cannot directly
+control the call.
 
 Android 17 treats bubbles as a windowing mode. WeModern's conversation bubble
 activity is embedded, resizable, supports multiple document instances, and

@@ -162,8 +162,6 @@
     <string name="test_message_sender">Mia</string>
     <string name="test_message_short">I’m downstairs.</string>
     <string name="test_message_long">I brought the meeting notes, the charger, and the coffee you asked for. Take your time—I’ll wait by the lobby entrance.</string>
-    <string name="test_voice_call_title">WeChat voice call</string>
-    <string name="test_video_call_title">WeChat video call</string>
     <string name="test_voice_call_text">Voice call in progress</string>
     <string name="test_video_call_text">Video call in progress</string>
     <string name="wechat_call_title">WeChat call</string>
@@ -172,6 +170,7 @@
     <string name="wechat_incoming_video_call">Incoming video call</string>
     <string name="call_action_answer">Answer</string>
     <string name="call_action_decline">Decline</string>
+    <string name="call_action_hang_up">Hang up</string>
     <string name="channel_wechat_messages">WeChat messages</string>
     <string name="channel_wechat_messages_description">Rewritten WeChat message notifications</string>
     <string name="channel_wechat_bubble_mode_conversations">Per-conversation notifications</string>
@@ -179,6 +178,8 @@
     <string name="channel_wechat_bubble_host">Bubble host notification</string>
     <string name="channel_wechat_bubble_host_description">Launches and updates the WeChat bubble. Silent and minimized by default; keep notifications on.</string>
     <string name="channel_status">Status</string>
-    <string name="channel_wechat_calls">WeChat calls</string>
-    <string name="channel_wechat_calls_description">Live updates for WeChat calls</string>
+    <string name="channel_wechat_incoming_calls">Incoming WeChat calls</string>
+    <string name="channel_wechat_incoming_calls_description">Rings and vibrates for incoming WeChat voice and video calls</string>
+    <string name="channel_wechat_ongoing_calls">Ongoing WeChat calls</string>
+    <string name="channel_wechat_ongoing_calls_description">Silently shows active WeChat voice and video calls</string>
 </resources>

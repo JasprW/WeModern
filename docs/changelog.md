@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+## 1.7.1 — 2026-07-20
+
+- 修复来电期间微信 `id=40/0x02` 再次并列显示：最新 Pixel 9 Pro / API 37 capture 证明 Android 会忽略 notification listener 对该 ongoing 通知的 cancel，导致它从来电起一直保留。现在只在 WeModern CallStyle 已成功建立后对 `0x02` 使用 1 秒可续短 snooze；用户点击 CallStyle 或观察到微信恢复前台时，会通过公开 listener API 把该 key 的 snooze 租期缩到 1ms，并开启 2.5 秒状态切换窗口，避免 Android 丢弃接听页触发的 `0x62`。首个及同批 `0x62` 在连接候选登记后立即切入原有 2 秒短压制。替换发布失败时继续保留微信原通知。
+- 重新设计 WeModern 通话 channel：全新“微信来电提醒”使用高重要性、系统默认来电铃声与振动，并通过 `FLAG_INSISTENT` 持续提醒到用户处理或来电状态结束；“微信通话中”保持静音并承载 ongoing CallStyle / Live Update。接通时以同一通知 ID 从来电 channel 原地更新到通话中 channel，移除持续提醒标记，避免重复通知和二次提醒；旧 `wechat_calls_live_quiet` 仅作为升级清理项，不再用于发布通知。Voice / Video 测试同步覆盖这套两阶段声音行为；Pixel 9 Pro / API 37 全新安装后的系统 channel 配置已通过 `dumpsys notification` 验证。
+- 将接通后的主通话替换从 `ProgressStyle` 改为可 promotion 的 `CallStyle.forOngoingCall`：继续显示联系人、头像和通话计时，并以同一固定通知 ID 从来电卡片更新为通话中卡片。系统 Hang up 操作使用独立 fake PendingIntent 打开微信通话页，不直接挂断；这是当前无法取得微信内部挂断 Intent 时接受的 tradeoff。API 37 的来电与通话中阶段统一由已声明用途的 `specialUse` FGS 承载，以满足 CallStyle 校验，同时仍不声明或使用全屏通知权限。
+- 修复 ongoing CallStyle 改造引入的 API 37 来电改写回归：真机日志显示原微信 `id=41` 从来电起持续存在且没有 snooze，系统也没有接受来电阶段的 `shortService` FGS；同一通电话接通后的 `specialUse` FGS 与 promoted ongoing CallStyle 则正常。现在来电也复用已验证的 `specialUse` 路径，避免 foreground type 切换差异，并继续只在替换发布成功后隐藏微信原通知；后续语音来电复测确认恢复正常。
+- 将 Voice / Video 测试通知改为与真实通话共用标准 CallStyle 构造：首次点击发布不计时的 incoming CallStyle，Answer 以同一 ID 更新为计时且可 promotion 的 ongoing CallStyle，Decline 与 ongoing Hang up 都直接停止专用测试 FGS 并移除通知。每次测试携带独立 session token，旧卡片的延迟操作不能关闭刚启动的新测试。测试与旧固定 VoIP 兼容路径一并迁移后，删除 `Notification.ProgressStyle` 构造类及全部生产引用；Pixel 9 Pro / API 37 已完成语音和视频两条完整操作链验收。
+- Voice / Video 测试 CallStyle 现在与 Message 测试共用 mock 联系人 `Mia` 和 `ic_test_message_avatar_48`：incoming 与 Answer 后的 ongoing 阶段都通过 `Person` 和 large icon 显示同一名称、头像，语音/视频标题资源不再单独伪装成联系人名称。
+
 ## 1.7.0 — 2026-07-19
 
 - 新增根目录 `DESIGN.md` 与机器可读的 `DESIGN.json`，以 Material You 动态颜色和 Material 3 Expressive 的灵动、活泼设计语言统一后续界面设计。

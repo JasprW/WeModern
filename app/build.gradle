@@ -11,8 +11,8 @@ android {
         applicationId "me.jaspr.wemodern"
         minSdk 26
         targetSdk 37
-        versionCode 33
-        versionName "1.7.0"
+        versionCode 34
+        versionName "1.7.1"
     }
 
     compileOptions {

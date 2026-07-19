@@ -160,8 +160,6 @@
     <string name="test_message_sender">Mia</string>
     <string name="test_message_short">我到楼下了。</string>
     <string name="test_message_long">我把会议资料、充电器和你要的咖啡都带来了，不着急，我在大厅入口等你。</string>
-    <string name="test_voice_call_title">微信语音通话</string>
-    <string name="test_video_call_title">微信视频通话</string>
     <string name="test_voice_call_text">语音通话中</string>
     <string name="test_video_call_text">视频通话中</string>
     <string name="wechat_call_title">微信通话</string>
@@ -170,6 +168,7 @@
     <string name="wechat_incoming_video_call">微信视频来电</string>
     <string name="call_action_answer">接听</string>
     <string name="call_action_decline">拒绝</string>
+    <string name="call_action_hang_up">挂断</string>
     <string name="channel_wechat_messages">微信消息</string>
     <string name="channel_wechat_messages_description">改写后的微信消息通知</string>
     <string name="channel_wechat_bubble_mode_conversations">微信会话通知</string>
@@ -177,6 +176,8 @@
     <string name="channel_wechat_bubble_host">微信气泡宿主通知</string>
     <string name="channel_wechat_bubble_host_description">用于启动和更新微信气泡。默认静音并最小化；请保持通知开启。</string>
     <string name="channel_status">状态</string>
-    <string name="channel_wechat_calls">微信通话</string>
-    <string name="channel_wechat_calls_description">微信通话 Live Update</string>
+    <string name="channel_wechat_incoming_calls">微信来电提醒</string>
+    <string name="channel_wechat_incoming_calls_description">收到微信语音或视频通话邀请时响铃并振动</string>
+    <string name="channel_wechat_ongoing_calls">微信通话中</string>
+    <string name="channel_wechat_ongoing_calls_description">静默显示正在进行的微信语音或视频通话</string>
 </resources>

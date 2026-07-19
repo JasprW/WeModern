@@ -6,6 +6,7 @@
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission
         android:name="android.permission.RECEIVE_SENSITIVE_NOTIFICATIONS"
@@ -65,11 +66,23 @@
             android:exported="false" />
 
         <service
+            android:name=".CallTestService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Preview user-triggered incoming and ongoing standard CallStyle notifications" />
+        </service>
+
+        <service
             android:name=".WeChatNotificationService"
             android:exported="true"
-            android:foregroundServiceType="shortService"
+            android:foregroundServiceType="specialUse"
             android:label="@string/listener_name"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Mirror a user-visible WeChat incoming or active call as a standard CallStyle notification" />
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>

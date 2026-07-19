@@ -175,7 +175,7 @@ public class WeChatCallClassifierTest {
     }
 
     @Test
-    public void callStatusUsesRollingSnoozeOnlyAfterReplacementIsConnected() {
+    public void callStatusUsesRollingSnoozeOnlyAfterCallStyleIsEstablished() {
         int protectedFlags = Notification.FLAG_ONGOING_EVENT
                 | Notification.FLAG_NO_CLEAR
                 | Notification.FLAG_FOREGROUND_SERVICE;
@@ -191,6 +191,45 @@ public class WeChatCallClassifierTest {
         assertFalse(WeChatNotificationService.shouldUseRollingCallStatusSnooze(
                 true,
                 Notification.FLAG_ONGOING_EVENT
+        ));
+    }
+
+    @Test
+    public void waitingCallStatusUsesShortSnoozeOnlyAfterCallStyleIsEstablished() {
+        assertFalse(WeChatNotificationService.shouldUseWaitingCallStatusSnooze(
+                false,
+                Notification.FLAG_ONGOING_EVENT
+        ));
+        assertTrue(WeChatNotificationService.shouldUseWaitingCallStatusSnooze(
+                true,
+                Notification.FLAG_ONGOING_EVENT
+        ));
+        assertFalse(WeChatNotificationService.shouldUseWaitingCallStatusSnooze(
+                true,
+                Notification.FLAG_ONGOING_EVENT
+                        | Notification.FLAG_NO_CLEAR
+                        | Notification.FLAG_FOREGROUND_SERVICE
+        ));
+    }
+
+    @Test
+    public void waitingCallStatusStaysAwakeDuringLaunchTransitionWindow() {
+        assertTrue(WeChatNotificationService.shouldKeepWaitingCallStatusAwakeForTransition(
+                2_500L,
+                2_000L,
+                Notification.FLAG_ONGOING_EVENT
+        ));
+        assertFalse(WeChatNotificationService.shouldKeepWaitingCallStatusAwakeForTransition(
+                2_500L,
+                2_500L,
+                Notification.FLAG_ONGOING_EVENT
+        ));
+        assertFalse(WeChatNotificationService.shouldKeepWaitingCallStatusAwakeForTransition(
+                2_500L,
+                2_000L,
+                Notification.FLAG_ONGOING_EVENT
+                        | Notification.FLAG_NO_CLEAR
+                        | Notification.FLAG_FOREGROUND_SERVICE
         ));
     }
 

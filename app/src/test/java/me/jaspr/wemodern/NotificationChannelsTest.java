@@ -41,10 +41,42 @@ public class NotificationChannelsTest {
         assertTrue(NotificationChannels.isMessageChannel(
                 NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS));
         assertFalse(NotificationChannels.isMessageChannel(
-                NotificationChannels.WECHAT_CALLS));
+                NotificationChannels.WECHAT_INCOMING_CALLS));
+        assertFalse(NotificationChannels.isMessageChannel(
+                NotificationChannels.WECHAT_ONGOING_CALLS));
         assertFalse(NotificationChannels.isMessageChannel(
                 NotificationChannels.WECHAT_BUBBLE_HOST));
         assertFalse(NotificationChannels.isMessageChannel(null));
+    }
+
+    @Test
+    public void callsUseSeparateStableChannelsForIncomingAndOngoingStates() {
+        assertEquals(
+                "wechat_calls_incoming",
+                NotificationChannels.WECHAT_INCOMING_CALLS);
+        assertEquals(
+                "wechat_calls_ongoing",
+                NotificationChannels.WECHAT_ONGOING_CALLS);
+        assertNotEquals(
+                NotificationChannels.WECHAT_INCOMING_CALLS,
+                NotificationChannels.WECHAT_ONGOING_CALLS);
+        assertTrue(NotificationChannels.isCallChannel(
+                NotificationChannels.WECHAT_INCOMING_CALLS));
+        assertTrue(NotificationChannels.isCallChannel(
+                NotificationChannels.WECHAT_ONGOING_CALLS));
+        assertFalse(NotificationChannels.isCallChannel(
+                NotificationChannels.WECHAT_MESSAGES));
+        assertFalse(NotificationChannels.isCallChannel(null));
+    }
+
+    @Test
+    public void incomingCallsAreHighPriorityAndOngoingCallsUseDefaultPriority() {
+        assertEquals(
+                NotificationManager.IMPORTANCE_HIGH,
+                NotificationChannels.incomingCallDefaultImportance());
+        assertEquals(
+                NotificationManager.IMPORTANCE_DEFAULT,
+                NotificationChannels.ongoingCallDefaultImportance());
     }
 
     @Test

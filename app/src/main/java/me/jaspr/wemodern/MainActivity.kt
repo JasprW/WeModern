@@ -162,7 +162,6 @@ class MainActivity : ComponentActivity() {
         NotificationChannels.ensure(this)
         getSystemService(NotificationManager::class.java).apply {
             cancel(MessageTestNotifications.CURRENT_ID)
-            cancel(CallTestNotifications.CURRENT_ID)
             cancel(CallTestNotifications.LEGACY_VIDEO_ID)
         }
         MessageTestNotifications.removeConversationShortcut(this)
@@ -598,33 +597,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun postCallTestNotification(video: Boolean) {
-        val startedAt = System.currentTimeMillis()
-        val iconRes = if (video) R.drawable.ic_material_videocam_24 else R.drawable.ic_material_call_24
-        val builder = Notification.Builder(this, NotificationChannels.WECHAT_CALLS)
-            .setSmallIcon(iconRes)
-            .setContentTitle(getString(if (video) R.string.test_video_call_title else R.string.test_voice_call_title))
-            .setContentText(getString(if (video) R.string.test_video_call_text else R.string.test_voice_call_text))
-            .setWhen(startedAt)
-            .setShowWhen(true)
-            .setUsesChronometer(true)
-            .setChronometerCountDown(false)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(Notification.CATEGORY_CALL)
-            .setColor(0xff33b332.toInt())
-        val notification = CallProgressStyle.build(
-            builder,
-            Icon.createWithResource(this, iconRes),
-        )
-        if (Build.VERSION.SDK_INT >= 36) {
-            Log.i(
-                TAG,
-                "test call promotedAllowed=${canPostPromotedNotifications()}, " +
-                        "promotable=${notification.hasPromotableCharacteristics()}, video=$video"
-            )
-        }
-        getSystemService(NotificationManager::class.java)
-            .notify(CallTestNotifications.idFor(video), notification)
+        startForegroundService(CallTestService.startIntent(this, video))
     }
 
     private companion object {

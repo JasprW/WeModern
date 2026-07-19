@@ -44,4 +44,16 @@ public class WeChatLaunchProxyActivityTest {
         assertTrue(WeChatLaunchProxyActivity.isIncomingCallLaunchKey(content));
         assertFalse(WeChatLaunchProxyActivity.isIncomingCallLaunchKey("message:alice"));
     }
+
+    @Test
+    public void ongoingCallActionsHaveSeparateIdentitiesWithoutIncomingCleanup() {
+        String content = "call:ongoing:content";
+        String hangUp = "call:ongoing:hang-up";
+
+        assertNotEquals(
+                WeChatLaunchProxyActivity.requestCodeFor(content),
+                WeChatLaunchProxyActivity.requestCodeFor(hangUp));
+        assertFalse(WeChatLaunchProxyActivity.isIncomingCallLaunchKey(content));
+        assertFalse(WeChatLaunchProxyActivity.isIncomingCallLaunchKey(hangUp));
+    }
 }

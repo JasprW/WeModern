@@ -30,6 +30,7 @@ public final class WeChatLaunchProxyActivity extends Activity {
         }
 
         if (isIncomingCallLaunchKey(getIntent().getStringExtra(EXTRA_LAUNCH_KEY))) {
+            WeChatNotificationService.prepareForIncomingCallLaunch();
             WeChatNotificationService.cancelCallNotification(this);
         }
 
