@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- 优化通话阶段切换：首个微信 `id=40/0x62` 仍只登记候选，但候选期间新增由微信会话门控的 `AudioManager` 模式检测；`MODE_IN_COMMUNICATION` / `MODE_IN_CALL` 可立即升级 Live Update，保留后续通知更新与 10 秒兜底，避免旧逻辑在实际接通后仍等待数秒。Pixel 9 Pro / API 37 语音真机复测确认原接通延迟已解决。Android 14+ 设置页同时新增“来电持续弹出”特殊访问状态和系统授权入口，CallStyle 发布日志记录实际 full-screen intent 可用性。
 - 先撤回 `v1.6.1` 之后所有缺少完整证据的微信语音/视频通话识别、通知合并、snooze、头像和分阶段 Live Update 实验，并恢复发布基线；后续新状态机仅依据 capture-only 完整样本重新实现。
 - 新增应用内 Debug 开关：“采集与日志”总开关控制微信通知 posted/removed/active-scan 的 `WeModern.Capture` 与 JSONL 记录，“改写通知”开关独立控制解析、取消或 snooze、替换、Live Update 与气泡 host；切换即时生效，开发阶段默认只采集、不改写。
 - 补充完整通话实验记录，保留双重/丢失/残留通知、错误 Live Update promotion 与计时、头像通知、VoIP Activity、`id=40` / `id=41`、snooze 和回滚等全部尝试及失败结论，防止未发布探索被误当成当前能力。

@@ -99,6 +99,8 @@
     <string name="setup_notification_access_description">Read and rewrite WeChat notifications</string>
     <string name="setup_post_notifications_title">Send notifications</string>
     <string name="setup_post_notifications_description">Show rewritten messages and calls</string>
+    <string name="setup_full_screen_intent_title">Incoming call pop-up</string>
+    <string name="setup_full_screen_intent_description">Keep CallStyle visible until you open WeChat</string>
     <string name="setup_live_update_description">Show live call progress</string>
     <string name="setup_battery_title">Unrestricted battery use</string>
     <string name="setup_battery_description">Improve background reliability</string>

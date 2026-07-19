@@ -179,6 +179,7 @@ class MainActivity : ComponentActivity() {
                     onOpenBubbleHostChannelSettings = {
                         openBubbleHostChannelSettings()
                     },
+                    onOpenFullScreenIntentSettings = { openFullScreenIntentSettings() },
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
                     onOpenAppSettings = { openAppSettings() },
@@ -328,6 +329,7 @@ class MainActivity : ComponentActivity() {
                 ConversationBubblePreferences.isDefaultGroupEnabled(this),
             conversationSortOrder = ConversationBubblePreferences.getSortOrder(this),
             conversations = ConversationBubblePreferences.getConversations(this),
+            fullScreenIntentAllowed = canUseFullScreenIntent(),
             promotedNotificationsAllowed = canPostPromotedNotifications(),
             batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
             readLogsGranted = hasReadLogsPermission(),
@@ -351,6 +353,11 @@ class MainActivity : ComponentActivity() {
 
     private fun canPostPromotedNotifications(): Boolean {
         return Build.VERSION.SDK_INT >= 36 && getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
+    }
+
+    private fun canUseFullScreenIntent(): Boolean {
+        return Build.VERSION.SDK_INT < 34 ||
+                getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
     }
 
     private fun isBatteryOptimizationIgnored(): Boolean {
@@ -422,6 +429,19 @@ class MainActivity : ComponentActivity() {
             }.onFailure {
                 openAppSettings()
             }
+        }
+    }
+
+    private fun openFullScreenIntentSettings() {
+        if (Build.VERSION.SDK_INT < 34) return
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            )
+        }.onFailure {
+            openAppSettings()
         }
     }
 
@@ -655,6 +675,7 @@ private data class SetupState(
     val conversationSortOrder: ConversationBubblePreferences.SortOrder =
         ConversationBubblePreferences.SortOrder.RECENT,
     val conversations: List<ConversationBubblePreferences.Entry> = emptyList(),
+    val fullScreenIntentAllowed: Boolean = Build.VERSION.SDK_INT < 34,
     val promotedNotificationsAllowed: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
@@ -679,6 +700,9 @@ private data class SetupState(
 
     val liveUpdatesAvailable: Boolean
         get() = Build.VERSION.SDK_INT >= 36
+
+    val fullScreenIntentSettingAvailable: Boolean
+        get() = Build.VERSION.SDK_INT >= 34
 
     val chatBubblesAvailable: Boolean
         get() = ChatBubbleBehavior.isSupported(Build.VERSION.SDK_INT)
@@ -742,6 +766,7 @@ private fun WeModernApp(
     onRequestNotifications: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
     onOpenBubbleHostChannelSettings: () -> Unit,
+    onOpenFullScreenIntentSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -843,6 +868,7 @@ private fun WeModernApp(
                     onOpenListenerSettings = onOpenListenerSettings,
                     onRequestNotifications = onRequestNotifications,
                     onOpenChatBubbleSettings = onOpenChatBubbleSettings,
+                    onOpenFullScreenIntentSettings = onOpenFullScreenIntentSettings,
                     onOpenPromotedNotificationSettings = onOpenPromotedNotificationSettings,
                     onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
                 )
@@ -1227,6 +1253,7 @@ private fun LazyListScope.settingsSectionItems(
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
+    onOpenFullScreenIntentSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
 ) {
@@ -1302,6 +1329,38 @@ private fun LazyListScope.settingsSectionItems(
             shape = middleShape,
             onClick = if (state.postNotificationsGranted) null else onRequestNotifications,
         )
+    }
+    if (state.fullScreenIntentSettingAvailable) {
+        settingsPageItem(
+            key = "setup_full_screen_intent",
+            contentType = "setting_row",
+            spacingAfter = 4.dp,
+        ) {
+            SettingRow(
+                title = stringResource(R.string.setup_full_screen_intent_title),
+                supporting = stringResource(R.string.setup_full_screen_intent_description),
+                icon = Icons.Rounded.PhoneInTalk,
+                status = stringResource(
+                    if (state.fullScreenIntentAllowed) {
+                        R.string.setup_status_enabled
+                    } else {
+                        R.string.setup_status_recommended
+                    }
+                ),
+                statusTone = if (state.fullScreenIntentAllowed) {
+                    SetupStatusTone.Success
+                } else {
+                    SetupStatusTone.Attention
+                },
+                highlighted = false,
+                shape = middleShape,
+                onClick = if (state.fullScreenIntentAllowed) {
+                    null
+                } else {
+                    onOpenFullScreenIntentSettings
+                },
+            )
+        }
     }
     if (state.chatBubblesAvailable) {
         settingsPageItem(

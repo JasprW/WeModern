@@ -97,6 +97,8 @@
     <string name="setup_notification_access_description">读取并重写微信通知</string>
     <string name="setup_post_notifications_title">发送通知</string>
     <string name="setup_post_notifications_description">展示重写后的消息与来电</string>
+    <string name="setup_full_screen_intent_title">来电持续弹出</string>
+    <string name="setup_full_screen_intent_description">在打开微信前持续显示 CallStyle</string>
     <string name="setup_live_update_description">在状态栏和锁屏显示实时通话进度</string>
     <string name="setup_battery_title">不受限电池使用</string>
     <string name="setup_battery_description">提升后台运行可靠性</string>

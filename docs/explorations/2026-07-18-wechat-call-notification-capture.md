@@ -1,7 +1,7 @@
 # 微信语音/视频通话通知实验与采集记录
 
 - 日期：2026-07-18；最近更新：2026-07-19
-- 状态：历史实验已撤回；2026-07-19 语音通话方案已形成可用基线，视频源序列确认同构并已复用相同优化，待 rewrite 真机验收
+- 状态：历史实验已撤回；2026-07-19 语音通话和音频模式快速接通确认已完成真机验收，视频复用相同优化，待 rewrite 真机验收
 - 发布基线：`v1.6.1`（commit/tag `d02341a`）
 - 验证设备：Pixel 9 Pro，Android API 37
 - 目的：完整保留本轮尝试、失败现象和结论，避免后续在缺少证据时重复叠加规则
@@ -27,7 +27,7 @@
 | 来电计时 | CallStyle 阶段不启动 chronometer，也不请求 Live Update promotion。 | 来电待接听时间不会误计入通话时长。 |
 | `id=41` 隐藏 | CallStyle 成功发布后，对微信 ongoing `id=41` 使用 2 秒滚动 snooze；每次到期重现前清除 post dedupe 身份并再次处理。 | 普通 listener cancel 已证实不可靠；短周期将快速重拨的最坏抑制窗口限制在约 2 秒。系统 channel 的 Silent + Minimize 是额外保险。 |
 | 进入微信页面 | 微信 Activity resume 只移除 WeModern 来电 CallStyle。 | 进入接听/挂断页不等于接通，不能在这里创建 Live Update 或开始计时。 |
-| 接通判定 | `id=40/0x02` 是待接听状态；首次 `0x62` 只登记候选，至少 1 秒后的新 `0x62` 更新才确认接通；无后续更新时使用 10 秒兜底。 | 避免刚进入微信 VoIP 页面便误判接通。当前实际接通到 Live Update 约有 5 秒延迟，用户认为可接受，保留为待优化项。 |
+| 接通判定 | `id=40/0x02` 是待接听状态；首次 `0x62` 只登记候选。候选期间由活跃微信状态门控 `AudioManager`，出现 `MODE_IN_COMMUNICATION` / `MODE_IN_CALL` 时立即确认；至少 1 秒后的新 `0x62` 更新与 10 秒超时继续兜底。 | 避免刚进入微信 VoIP 页面便误判接通，同时绕开旧兜底造成的约 5 秒体感延迟。音频模式是全局状态，不能脱离已跟踪微信会话独立使用。 |
 | Live Update | 接通后用同一个固定 WeModern 通知 ID 更新为标准 `ProgressStyle`，正文改为通话进行中，从确认时刻启动 chronometer，并请求 promotion。 | 来电与通话中不会生成两个 WeModern 通话身份；邀请文案不会沿用到通话中。 |
 | `id=40` 隐藏 | 待接听 `0x02` 尝试 listener cancel；Live Update 成功后，对受保护的 `0x62` 前台服务通知使用 2 秒滚动 snooze。 | 不在 Live Update 建立前长期 snooze 状态源；不再使用曾导致快速重拨丢事件的 30 分钟 snooze。系统 channel 的 Silent + Minimize 负责进一步压低仍可能短暂出现的源项。 |
 | 隐藏安全性 | listener cancel 的自隐藏标记 1 秒后自动失效；滚动 snooze 只在已连接替换存在时运行。 | 防止系统忽略 cancel 后，过期标记吞掉同一 key 的真实 `APP_CANCEL`；关闭 rewrite 时所有 cancel/snooze 均被运行时保护阻止。 |
@@ -35,7 +35,15 @@
 | 管线隔离 | `id=40`、`id=41` 和 WeModern 通话替换都明确排除消息历史、消息分组、会话 shortcut 与 bubble host。 | 防止此前出现的 2 条微信 + 3 条 WeModern（含 bubble host）通知膨胀。 |
 | 调试能力 | “采集与日志”独立记录微信原始事件；“改写通知”单独控制分类、隐藏和替换。 | 可以 capture/logging 而不 rewrite，原微信通知不会因调试采集被取消；后续视频优化继续沿用此采样方式。 |
 
-当前验收结论：在上述两个微信 channel 均设为 Silent + Minimize 后，语音来电 CallStyle 表现符合预期，接通后的 Live Update 能显示；约 5 秒 promotion 延迟列为待优化但不阻塞当前使用。系统 channel 降级属于设备侧配置，重装 WeModern 不会替用户自动完成，也不能关闭对应分类，否则可能切断 WeModern 的识别输入。
+当前验收结论：在上述两个微信 channel 均设为 Silent + Minimize 后，语音来电 CallStyle 表现符合预期，接通后的 Live Update 能显示。约 5 秒 promotion 延迟的代码原因已定位并加入音频模式快速确认；后续语音真机复测确认 Live Update 紧随接通升级，用户确认延迟问题已完全解决。系统 channel 降级属于设备侧配置，重装 WeModern 不会替用户自动完成，也不能关闭对应分类，否则可能切断 WeModern 的识别输入。
+
+## 2026-07-19 持续 CallStyle 与实时接通优化
+
+- Android 14+ 的 full-screen intent 是 CallStyle 持续 heads-up 的系统前置条件。项目原本已经声明权限、使用 High importance 通话 channel 并设置代理 `fullScreenIntent`；本轮增加 `NotificationManager.canUseFullScreenIntent()` 运行时状态、发布日志和设置页系统授权入口。应用仍在用户点击通知或微信 Activity 真正恢复时取消 CallStyle，因此“持续”限定为用户尚未打开微信的来电阶段。
+- 已捕获语音序列的首个 `id=40/0x62` 在进入微信页面时出现，随后同一突发组的两个更新只晚约 110ms，均被 1 秒保护窗口过滤；源通知没有新的接听更新时，Live Update 在约 10.3 秒后才建立，证明延迟来自 `CONNECTED_STATUS_FALLBACK_DELAY_MS=10_000`，不是 Android promotion 本身。
+- 同一设备 `dumpsys audio` 历史记录显示微信进程在真实接通附近调用 `setMode(MODE_IN_COMMUNICATION)`。语音样本中该事件约为 11:16:06.655，旧兜底约在 11:16:12.8 执行，可提前约 6 秒；视频样本中 `id=40/0x62` 约在 11:22:45.5 出现，音频模式于 11:22:51.831 切换并在 11:23:05.052 恢复 Normal，与真实连接区间一致。音频路由本身会在响铃时提前切换，不能替代模式信号。
+- 当前实现只在首个 `0x62` 候选存在时启动检测：API 31+ 注册 `OnModeChangedListener`，API 26–30 每 250ms 轮询 `getMode()`；确认前再次检查 rewrite 已开启、微信状态源仍被跟踪、候选仍有效且尚未连接。成功 promotion、候选撤销、会话结束、关闭 rewrite 或服务清理都会停止监听/轮询。
+- 后续通知更新和 10 秒 fallback 保留，作为微信未切换音频模式、系统回调不可用或设备行为差异时的兼容路径。暂不使用 `MODE_NORMAL` 单独结束 Live Update，避免音频路由短暂重配造成提前结束。
 
 ## 2026-07-19 视频通话源序列对照与优化复用
 
@@ -194,6 +202,8 @@ adb exec-out run-as me.jaspr.wemodern cat files/wechat_notification_capture.json
 - 当前运行时开关版本已通过 `:app:testDebugUnitTest`、`:app:assembleDebug` 与 `:app:lintDebug`，并已安装到 Pixel 9 Pro。
 - 结构化界面检查确认“采集与日志”为开启、“改写通知”为关闭；顶部状态显示“正在采集微信原始通知；通知改写已关闭”。
 - 服务日志确认 `captureLogging=true, rewrite=false` 和 `listener connected, rewrites disabled`；最终通知列表没有 WeModern 自有通知。
+- 音频模式快速确认版本新增 `CallAudioModePolicyTest` 的正反例，并再次通过 `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:lintDebug` 和 `git diff --check`；Debug APK 已安装到同一 Pixel 9 Pro / API 37。结构化界面确认“Incoming call pop-up”为 On，说明该设备的 `canUseFullScreenIntent()` 返回允许；通知监听器重连正常。安装时设备仍为 capture on / rewrite off，因此尚未把基础检查误记为真实通话验收。
+- 随后的语音 rewrite 真机测试确认：实际接通触发音频模式切换后，Live Update 立即升级，旧版约 5 秒体感延迟不再出现；用户验收结论为“延迟问题已经完美解决”。
 
 ## 后续采集场景
 

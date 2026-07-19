@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Icon;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -39,6 +40,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final long CONNECTED_CALL_STATUS_SNOOZE_DURATION_MS = 2_000L;
     private static final long SELF_HIDDEN_CANCEL_MARKER_DURATION_MS = 1_000L;
     private static final long CONNECTED_STATUS_FALLBACK_DELAY_MS = 10_000L;
+    private static final long LEGACY_AUDIO_MODE_POLL_INTERVAL_MS = 250L;
     private static final long CALL_RINGING_TIMEOUT_MS = 2L * 60L * 1000L;
     private static final int MAX_HISTORY = 8;
     private static final int MESSAGE_GROUP_SUMMARY_ID = 0x5747534d;
@@ -53,14 +55,30 @@ public class WeChatNotificationService extends NotificationListenerService {
     private final Set<String> selfHiddenOriginals = new HashSet<>();
     private final CallSession callSession = new CallSession();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable legacyAudioModePoll = new Runnable() {
+        @Override
+        public void run() {
+            if (!callAudioModeMonitoring) return;
+            observeCurrentCallAudioMode("poll");
+            if (callAudioModeMonitoring) {
+                mainHandler.postDelayed(this, LEGACY_AUDIO_MODE_POLL_INTERVAL_MS);
+            }
+        }
+    };
     private NotificationCancelLogWatcher cancelLogWatcher;
     private SharedPreferences.OnSharedPreferenceChangeListener debugPreferencesListener;
+    private AudioManager audioManager;
+    private AudioManager.OnModeChangedListener callAudioModeListener;
+    private boolean callAudioModeMonitoring;
+    private boolean callAudioModeListenerRegistered;
+    private int lastObservedCallAudioMode = Integer.MIN_VALUE;
     private boolean listenerConnected;
     private boolean rewriteEnabled;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        audioManager = getSystemService(AudioManager.class);
         rewriteEnabled = NotificationDebugPreferences.isRewriteEnabled(this);
         debugPreferencesListener = (sharedPreferences, key) ->
                 mainHandler.post(this::refreshRewriteMode);
@@ -220,12 +238,14 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private void stopRewriteInfrastructure() {
+        stopConnectedAudioModeMonitoring();
         if (cancelLogWatcher == null) return;
         cancelLogWatcher.stop();
         cancelLogWatcher = null;
     }
 
     private void clearRewriteState() {
+        stopConnectedAudioModeMonitoring();
         getSystemService(NotificationManager.class).cancelAll();
         histories.clear();
         originalToConversation.clear();
@@ -912,6 +932,7 @@ public class WeChatNotificationService extends NotificationListenerService {
 
         if (signal == WeChatCallClassifier.Signal.WAITING_STATUS) {
             callSession.clearConnectedCandidate();
+            stopConnectedAudioModeMonitoring();
             Log.i(TAG, "classified wechat pre-connect call status"
                     + ", fromActiveScan=" + fromActiveScan
                     + ", caller=" + callSession.caller
@@ -935,6 +956,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                         + ", fromActiveScan=" + fromActiveScan
                         + ", observedAt=" + observedAt
                         + ", key=" + sbn.getKey());
+                startConnectedAudioModeMonitoring();
                 return true;
             }
             if (!WeChatCallClassifier.isLaterConnectedUpdate(
@@ -968,6 +990,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         callSession.incomingVisible = false;
         callSession.incomingSource = null;
         if (postConnectedCallReplacement()) {
+            stopConnectedAudioModeMonitoring();
             Log.i(TAG, "confirmed wechat connected call: " + source
                     + ", connectedAt=" + connectedAt);
             return true;
@@ -997,7 +1020,13 @@ public class WeChatNotificationService extends NotificationListenerService {
                 Log.w(TAG, "skip incoming CallStyle because proxy intents could not be created");
                 return false;
             }
-            getSystemService(NotificationManager.class).notify(
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            boolean fullScreenIntentAllowed = Build.VERSION.SDK_INT < 34
+                    || notificationManager.canUseFullScreenIntent();
+            Log.i(TAG, "post incoming WeChat CallStyle"
+                    + ", fullScreenIntentAllowed=" + fullScreenIntentAllowed
+                    + ", channel=" + NotificationChannels.WECHAT_CALLS);
+            notificationManager.notify(
                     CALL_REPLACEMENT_ID,
                     notification
             );
@@ -1211,6 +1240,91 @@ public class WeChatNotificationService extends NotificationListenerService {
         }, CONNECTED_STATUS_FALLBACK_DELAY_MS);
     }
 
+    private void startConnectedAudioModeMonitoring() {
+        if (audioManager == null || callSession.connectedCandidateAt <= 0L) return;
+        if (callAudioModeMonitoring) {
+            observeCurrentCallAudioMode("notification update");
+            return;
+        }
+        callAudioModeMonitoring = true;
+        lastObservedCallAudioMode = Integer.MIN_VALUE;
+        if (Build.VERSION.SDK_INT >= 31) {
+            try {
+                callAudioModeListener = mode -> handleCallAudioMode(mode, "listener");
+                audioManager.addOnModeChangedListener(
+                        getMainExecutor(),
+                        callAudioModeListener
+                );
+                callAudioModeListenerRegistered = true;
+            } catch (RuntimeException e) {
+                callAudioModeListener = null;
+                callAudioModeListenerRegistered = false;
+                Log.w(TAG, "failed to register audio mode listener; using polling", e);
+            }
+        }
+        observeCurrentCallAudioMode("initial");
+        if (callAudioModeMonitoring && !callAudioModeListenerRegistered) {
+            mainHandler.postDelayed(
+                    legacyAudioModePoll,
+                    LEGACY_AUDIO_MODE_POLL_INTERVAL_MS
+            );
+        }
+    }
+
+    private void stopConnectedAudioModeMonitoring() {
+        callAudioModeMonitoring = false;
+        mainHandler.removeCallbacks(legacyAudioModePoll);
+        if (Build.VERSION.SDK_INT >= 31
+                && callAudioModeListenerRegistered
+                && audioManager != null
+                && callAudioModeListener != null) {
+            try {
+                audioManager.removeOnModeChangedListener(callAudioModeListener);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "failed to unregister audio mode listener", e);
+            }
+        }
+        callAudioModeListenerRegistered = false;
+        callAudioModeListener = null;
+        lastObservedCallAudioMode = Integer.MIN_VALUE;
+    }
+
+    private void observeCurrentCallAudioMode(String source) {
+        if (!callAudioModeMonitoring || audioManager == null) return;
+        try {
+            handleCallAudioMode(audioManager.getMode(), source);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to read audio mode", e);
+        }
+    }
+
+    private void handleCallAudioMode(int mode, String source) {
+        if (!callAudioModeMonitoring) return;
+        if (mode != lastObservedCallAudioMode) {
+            lastObservedCallAudioMode = mode;
+            Log.i(TAG, "wechat call audio mode"
+                    + ", mode=" + CallAudioModePolicy.modeName(mode)
+                    + ", source=" + source
+                    + ", hasStatus=" + (callSession.statusSource != null)
+                    + ", candidateAt=" + callSession.connectedCandidateAt);
+        }
+        if (!CallAudioModePolicy.shouldConfirmConnection(
+                isRewriteCurrentlyEnabled(),
+                callSession.connected,
+                callSession.statusSource != null,
+                callSession.connectedCandidateAt,
+                mode
+        )) {
+            return;
+        }
+        if (promoteConnectedCall(
+                System.currentTimeMillis(),
+                "audio mode " + CallAudioModePolicy.modeName(mode)
+        )) {
+            hideConnectedCallStatusOriginal(callSession.statusKey);
+        }
+    }
+
     private void cancelOriginal(StatusBarNotification sbn, String source) {
         cancelOriginal(sbn.getKey(), source);
     }
@@ -1258,6 +1372,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private void endCallSession(String reason) {
+        stopConnectedAudioModeMonitoring();
         cancelCallNotification(this);
         callSession.reset();
         Log.i(TAG, "end rewritten WeChat call session: " + reason);
