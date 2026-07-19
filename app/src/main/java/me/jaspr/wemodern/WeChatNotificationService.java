@@ -6,6 +6,7 @@ import android.app.PendingIntent;
 import android.app.Person;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.os.Bundle;
@@ -34,48 +35,78 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final String REPLACEMENT_STORE = "sync_removal_replacements";
     private static final String STORAGE_SEPARATOR = "\u001f";
     private static final long ORIGINAL_SNOOZE_DURATION_MS = 24L * 60L * 60L * 1000L;
+    private static final long INCOMING_CALL_SNOOZE_DURATION_MS = 2_000L;
+    private static final long CONNECTED_CALL_STATUS_SNOOZE_DURATION_MS = 2_000L;
+    private static final long SELF_HIDDEN_CANCEL_MARKER_DURATION_MS = 1_000L;
+    private static final long CONNECTED_STATUS_FALLBACK_DELAY_MS = 10_000L;
+    private static final long CALL_RINGING_TIMEOUT_MS = 2L * 60L * 1000L;
     private static final int MAX_HISTORY = 8;
     private static final int MESSAGE_GROUP_SUMMARY_ID = 0x5747534d;
+    static final int CALL_REPLACEMENT_ID = 0x5743414c;
     private static final int REASON_LISTENER_CANCEL = 10;
+    private static final int REASON_SNOOZED = 18;
     private static final NotificationPostDeduplicator POST_DEDUPLICATOR =
             new NotificationPostDeduplicator();
     private final Map<String, ArrayDeque<Message>> histories = new HashMap<>();
     private final Map<String, String> originalToConversation = new HashMap<>();
     private final Map<CancelEventKey, ReplacementRecord> replacementsByCancelEvent = new HashMap<>();
     private final Set<String> selfHiddenOriginals = new HashSet<>();
+    private final CallSession callSession = new CallSession();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private NotificationCancelLogWatcher cancelLogWatcher;
+    private SharedPreferences.OnSharedPreferenceChangeListener debugPreferencesListener;
+    private boolean listenerConnected;
+    private boolean rewriteEnabled;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        NotificationChannels.ensure(this);
-        ConversationBubbles.syncActiveNotifications(this);
-        cancelLogWatcher = new NotificationCancelLogWatcher(
-                this::handleNotificationCancelLog,
-                this::handleActivityEvent
-        );
-        cancelLogWatcher.start();
-        Log.i(TAG, "service created, sdk=" + Build.VERSION.SDK_INT);
+        rewriteEnabled = NotificationDebugPreferences.isRewriteEnabled(this);
+        debugPreferencesListener = (sharedPreferences, key) ->
+                mainHandler.post(this::refreshRewriteMode);
+        NotificationDebugPreferences.registerListener(this, debugPreferencesListener);
+        if (rewriteEnabled) {
+            startRewriteInfrastructure();
+        }
+        Log.i(TAG, "service created"
+                + ", sdk=" + Build.VERSION.SDK_INT
+                + ", captureLogging="
+                + NotificationDebugPreferences.isCaptureLoggingEnabled(this)
+                + ", rewrite=" + rewriteEnabled);
     }
 
     @Override
     public void onListenerDisconnected() {
         super.onListenerDisconnected();
+        listenerConnected = false;
         Log.i(TAG, "listener disconnected");
     }
 
     @Override
     public void onDestroy() {
-        if (cancelLogWatcher != null) cancelLogWatcher.stop();
+        if (debugPreferencesListener != null) {
+            NotificationDebugPreferences.unregisterListener(this, debugPreferencesListener);
+        }
+        stopRewriteInfrastructure();
         super.onDestroy();
     }
 
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
-        Log.i(TAG, "listener connected");
+        listenerConnected = true;
         StatusBarNotification[] active = getActiveNotifications();
+        captureActiveWeChatNotifications(active);
+        if (!isRewriteCurrentlyEnabled()) {
+            clearRewriteState();
+            Log.i(TAG, "listener connected, rewrites disabled");
+            return;
+        }
+        Log.i(TAG, "listener connected");
+        processActiveNotificationsForRewrite(active);
+    }
+
+    private void processActiveNotificationsForRewrite(StatusBarNotification[] active) {
         if (active == null) return;
         for (StatusBarNotification sbn : active) {
             if (WECHAT_PACKAGE.equals(sbn.getPackageName())) {
@@ -91,7 +122,24 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     @Override
+    public void onNotificationPosted(StatusBarNotification sbn, RankingMap rankingMap) {
+        if (WECHAT_PACKAGE.equals(sbn.getPackageName()) && isCaptureLoggingEnabled()) {
+            WeChatNotificationCapture.record(this, "POSTED", sbn, rankingMap, null);
+        }
+        if (!isRewriteCurrentlyEnabled()) return;
+        handleNotificationPostedForRewrite(sbn);
+    }
+
+    @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
+        if (WECHAT_PACKAGE.equals(sbn.getPackageName()) && isCaptureLoggingEnabled()) {
+            WeChatNotificationCapture.record(this, "POSTED", sbn, null, null);
+        }
+        if (!isRewriteCurrentlyEnabled()) return;
+        handleNotificationPostedForRewrite(sbn);
+    }
+
+    private void handleNotificationPostedForRewrite(StatusBarNotification sbn) {
         if (getPackageName().equals(sbn.getPackageName())) {
             Log.i(TAG, "self notification posted"
                     + ", id=" + sbn.getId()
@@ -108,12 +156,83 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
+        if (WECHAT_PACKAGE.equals(sbn.getPackageName()) && isCaptureLoggingEnabled()) {
+            WeChatNotificationCapture.record(this, "REMOVED", sbn, null, 0);
+        }
+        if (!isRewriteCurrentlyEnabled()) return;
         handleWeChatNotificationRemoved(sbn, 0);
     }
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn, RankingMap rankingMap, int reason) {
+        if (WECHAT_PACKAGE.equals(sbn.getPackageName()) && isCaptureLoggingEnabled()) {
+            WeChatNotificationCapture.record(this, "REMOVED", sbn, rankingMap, reason);
+        }
+        if (!isRewriteCurrentlyEnabled()) return;
         handleWeChatNotificationRemoved(sbn, reason);
+    }
+
+    private boolean isCaptureLoggingEnabled() {
+        return NotificationDebugPreferences.isCaptureLoggingEnabled(this);
+    }
+
+    private boolean isRewriteCurrentlyEnabled() {
+        return NotificationDebugPreferences.isRewriteEnabled(this);
+    }
+
+    private void captureActiveWeChatNotifications(StatusBarNotification[] active) {
+        if (!isCaptureLoggingEnabled() || active == null) return;
+        RankingMap rankingMap = getCurrentRanking();
+        for (StatusBarNotification sbn : active) {
+            if (WECHAT_PACKAGE.equals(sbn.getPackageName())) {
+                WeChatNotificationCapture.record(this, "ACTIVE_SCAN", sbn, rankingMap, null);
+            }
+        }
+    }
+
+    private void refreshRewriteMode() {
+        boolean desired = NotificationDebugPreferences.isRewriteEnabled(this);
+        if (desired == rewriteEnabled) return;
+        rewriteEnabled = desired;
+        if (rewriteEnabled) {
+            startRewriteInfrastructure();
+            if (listenerConnected) {
+                StatusBarNotification[] active = getActiveNotifications();
+                captureActiveWeChatNotifications(active);
+                processActiveNotificationsForRewrite(active);
+            }
+        } else {
+            stopRewriteInfrastructure();
+            clearRewriteState();
+        }
+        Log.i(TAG, "notification rewrite " + (rewriteEnabled ? "enabled" : "disabled"));
+    }
+
+    private void startRewriteInfrastructure() {
+        NotificationChannels.ensure(this);
+        ConversationBubbles.syncActiveNotifications(this);
+        if (cancelLogWatcher != null) return;
+        cancelLogWatcher = new NotificationCancelLogWatcher(
+                this::handleNotificationCancelLog,
+                this::handleActivityEvent
+        );
+        cancelLogWatcher.start();
+    }
+
+    private void stopRewriteInfrastructure() {
+        if (cancelLogWatcher == null) return;
+        cancelLogWatcher.stop();
+        cancelLogWatcher = null;
+    }
+
+    private void clearRewriteState() {
+        getSystemService(NotificationManager.class).cancelAll();
+        histories.clear();
+        originalToConversation.clear();
+        replacementsByCancelEvent.clear();
+        selfHiddenOriginals.clear();
+        callSession.reset();
+        replacementStore().edit().clear().apply();
     }
 
     private void handleWeChatNotificationRemoved(StatusBarNotification sbn, int reason) {
@@ -136,6 +255,7 @@ public class WeChatNotificationService extends NotificationListenerService {
             Log.d(TAG, "wechat hidden by self: key=" + key + ", reason=" + reasonName(reason));
             return;
         }
+        if (handleCapturedCallRemoval(sbn, reason)) return;
         if (shouldClearBubblesAfterWeChatRemoval(reason)) {
             BubbleLaunchCleanup.clearAfterWeChatAppCancel(this);
         }
@@ -163,8 +283,17 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private void handleNotificationCancelLog(String pkg, int id, String tag, int userId, int reason) {
         if (!WECHAT_PACKAGE.equals(pkg)) return;
-        BubbleLaunchCleanup.clearAfterWeChatAppCancel(this);
         CancelEventKey eventKey = new CancelEventKey(userId, id, tag);
+        if (callSession.matchesIncoming(eventKey)) {
+            cancelIncomingCallReplacement("wechat incoming notification app-cancelled");
+            callSession.clearIncoming();
+            return;
+        }
+        if (callSession.matchesStatus(eventKey)) {
+            endCallSession("wechat call status app-cancelled");
+            return;
+        }
+        BubbleLaunchCleanup.clearAfterWeChatAppCancel(this);
         ReplacementRecord replacement = replacementsByCancelEvent.get(eventKey);
         if (replacement == null) {
             replacement = restoreReplacement(eventKey);
@@ -218,6 +347,9 @@ public class WeChatNotificationService extends NotificationListenerService {
                     event.taskId,
                     event.componentName
             );
+            if (callSession.incomingVisible && isWeChatComponent(event.componentName)) {
+                cancelIncomingCallReplacement("wechat activity resumed");
+            }
             return;
         }
         if (event.type != NotificationCancelLogWatcher.ActivityEvent.TYPE_TASK_REMOVED) return;
@@ -231,12 +363,47 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
     }
 
+    private boolean handleCapturedCallRemoval(StatusBarNotification sbn, int reason) {
+        CancelEventKey eventKey = CancelEventKey.from(sbn);
+        WeChatCallClassifier.Signal signal = WeChatCallClassifier.classify(sbn.getNotification());
+        boolean incoming = callSession.matchesIncoming(eventKey)
+                || signal == WeChatCallClassifier.Signal.INCOMING;
+        boolean status = callSession.matchesStatus(eventKey)
+                || signal == WeChatCallClassifier.Signal.WAITING_STATUS
+                || signal == WeChatCallClassifier.Signal.CONNECTED_STATUS;
+        if (status) {
+            if (reason == REASON_SNOOZED) {
+                Log.d(TAG, "ignore snoozed connected-call source removal: key=" + sbn.getKey());
+                return true;
+            }
+            endCallSession("wechat call status removed, reason=" + reasonName(reason));
+            return true;
+        }
+        if (incoming) {
+            if (!callSession.connected) {
+                cancelIncomingCallReplacement(
+                        "wechat incoming notification removed, reason=" + reasonName(reason));
+            }
+            callSession.clearIncoming();
+            return true;
+        }
+        return false;
+    }
+
     private void handleWeChatNotification(StatusBarNotification sbn, boolean fromActiveScan) {
+        if (!isRewriteCurrentlyEnabled()) {
+            Log.w(TAG, "blocked rewrite while notification rewriting is disabled"
+                    + ", key=" + sbn.getKey());
+            return;
+        }
         Notification original = sbn.getNotification();
         if (!POST_DEDUPLICATOR.shouldProcess(sbn.getKey(), sbn.getPostTime(), original.when)) {
             Log.d(TAG, "skip duplicate wechat callback: key=" + sbn.getKey()
                     + ", postTime=" + sbn.getPostTime()
                     + ", when=" + original.when);
+            return;
+        }
+        if (handleCapturedCallNotification(sbn, original, fromActiveScan)) {
             return;
         }
         ParsedVoipNotification voip = WeChatParser.parseVoip(this, sbn);
@@ -523,6 +690,15 @@ public class WeChatNotificationService extends NotificationListenerService {
                 && !NotificationChannels.WECHAT_CALLS.equals(channel)) {
             return;
         }
+        if (sbn.getId() == CALL_REPLACEMENT_ID) {
+            if (callSession.hasActiveState() || hasPersistedReplacement(CALL_REPLACEMENT_ID)) {
+                Log.d(TAG, "keep active rewritten call notification: key=" + sbn.getKey());
+            } else {
+                getSystemService(NotificationManager.class).cancel(CALL_REPLACEMENT_ID);
+                Log.i(TAG, "cancel orphaned rewritten call notification: key=" + sbn.getKey());
+            }
+            return;
+        }
         boolean groupSummary = isMessageGroupSummary(sbn.getNotification());
         boolean testNotification = isTestNotificationId(sbn.getId());
         boolean persistedReplacement = hasPersistedReplacement(sbn.getId());
@@ -681,6 +857,421 @@ public class WeChatNotificationService extends NotificationListenerService {
         return getSharedPreferences(REPLACEMENT_STORE, MODE_PRIVATE);
     }
 
+    private boolean handleCapturedCallNotification(
+            StatusBarNotification sbn,
+            Notification original,
+            boolean fromActiveScan
+    ) {
+        WeChatCallClassifier.Signal signal = WeChatCallClassifier.classify(original);
+        if (signal == WeChatCallClassifier.Signal.NONE) return false;
+
+        Bundle extras = original.extras;
+        CharSequence title = extras == null
+                ? null : extras.getCharSequence(Notification.EXTRA_TITLE);
+        CharSequence text = extras == null
+                ? null : extras.getCharSequence(Notification.EXTRA_TEXT);
+        String caller = WeChatCallClassifier.callerName(title, text);
+        boolean video = WeChatCallClassifier.isVideo(title, text);
+
+        if (signal == WeChatCallClassifier.Signal.INCOMING) {
+            if (callSession.connected) {
+                endCallSession("new incoming call replaced connected session");
+            }
+            callSession.incomingKey = sbn.getKey();
+            callSession.incomingSource = CancelEventKey.from(sbn);
+            callSession.updateCaller(caller);
+            callSession.video = video;
+            PendingIntent target = original.fullScreenIntent != null
+                    ? original.fullScreenIntent : original.contentIntent;
+            if (target != null) callSession.launchTarget = target;
+            callSession.generation++;
+
+            // Activity-log foreground tracking is asynchronous and can still report WeChat as
+            // foreground after the user has left it. The incoming notification itself is the
+            // authoritative signal: post first, then let the resume watcher remove our card if
+            // WeChat really is visible.
+            boolean posted = postIncomingCallReplacement();
+            if (posted) {
+                hideIncomingCallOriginal(sbn);
+                scheduleIncomingCallTimeout(callSession.generation);
+            }
+            Log.i(TAG, "classified wechat incoming call"
+                    + ", fromActiveScan=" + fromActiveScan
+                    + ", caller=" + callSession.caller
+                    + ", video=" + callSession.video
+                    + ", posted=" + posted
+                    + ", key=" + sbn.getKey());
+            return true;
+        }
+
+        callSession.statusKey = sbn.getKey();
+        callSession.statusSource = CancelEventKey.from(sbn);
+        callSession.updateCaller(caller);
+        callSession.video = callSession.video || video;
+        if (original.contentIntent != null) callSession.launchTarget = original.contentIntent;
+
+        if (signal == WeChatCallClassifier.Signal.WAITING_STATUS) {
+            callSession.clearConnectedCandidate();
+            Log.i(TAG, "classified wechat pre-connect call status"
+                    + ", fromActiveScan=" + fromActiveScan
+                    + ", caller=" + callSession.caller
+                    + ", flags=" + original.flags
+                    + ", key=" + sbn.getKey());
+            // The plain ongoing notification is not needed while the incoming CallStyle is
+            // present. Listener cancellation does not suppress later posts that reuse this key,
+            // so the 0x62 transition can still drive connection detection.
+            hideCallStatusOriginal(sbn);
+            return true;
+        }
+
+        if (!callSession.connected) {
+            long observedAt = sbn.getPostTime() > 0
+                    ? sbn.getPostTime() : System.currentTimeMillis();
+            if (callSession.connectedCandidateAt <= 0L) {
+                callSession.connectedCandidateAt = observedAt;
+                int confirmationGeneration = ++callSession.connectionGeneration;
+                scheduleConnectedStatusFallback(confirmationGeneration);
+                Log.i(TAG, "defer first wechat foreground-service call status"
+                        + ", fromActiveScan=" + fromActiveScan
+                        + ", observedAt=" + observedAt
+                        + ", key=" + sbn.getKey());
+                return true;
+            }
+            if (!WeChatCallClassifier.isLaterConnectedUpdate(
+                    callSession.connectedCandidateAt,
+                    observedAt
+            )) {
+                Log.d(TAG, "ignore wechat foreground-transition status burst"
+                        + ", firstObservedAt=" + callSession.connectedCandidateAt
+                        + ", observedAt=" + observedAt
+                        + ", key=" + sbn.getKey());
+                return true;
+            }
+            long connectedAt = original.when > 0 ? original.when : observedAt;
+            if (!promoteConnectedCall(connectedAt, "later notification update")) return true;
+        }
+        hideCallStatusOriginal(sbn);
+        Log.i(TAG, "classified wechat connected call status"
+                + ", fromActiveScan=" + fromActiveScan
+                + ", caller=" + callSession.caller
+                + ", flags=" + original.flags
+                + ", connectedAt=" + callSession.connectedAt
+                + ", key=" + sbn.getKey());
+        return true;
+    }
+
+    private boolean promoteConnectedCall(long connectedAt, String source) {
+        callSession.connected = true;
+        callSession.connectedAt = connectedAt;
+        callSession.connectedCandidateAt = 0L;
+        callSession.connectionGeneration++;
+        callSession.incomingVisible = false;
+        callSession.incomingSource = null;
+        if (postConnectedCallReplacement()) {
+            Log.i(TAG, "confirmed wechat connected call: " + source
+                    + ", connectedAt=" + connectedAt);
+            return true;
+        }
+        callSession.connected = false;
+        cancelCallNotification(this);
+        Log.w(TAG, "leave connected WeChat source visible after replacement failure");
+        return false;
+    }
+
+    private boolean postIncomingCallReplacement() {
+        PendingIntent target = callSession.launchTarget;
+        if (target == null) {
+            Log.w(TAG, "skip incoming CallStyle without a WeChat PendingIntent");
+            return false;
+        }
+        try {
+            String caller = callSession.displayCaller(this);
+            Notification notification = buildIncomingCallNotification(
+                    this,
+                    caller,
+                    callSession.video,
+                    cachedCallAvatar(caller),
+                    target
+            );
+            if (notification == null) {
+                Log.w(TAG, "skip incoming CallStyle because proxy intents could not be created");
+                return false;
+            }
+            getSystemService(NotificationManager.class).notify(
+                    CALL_REPLACEMENT_ID,
+                    notification
+            );
+            callSession.incomingVisible = true;
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to post incoming WeChat CallStyle", e);
+            return false;
+        }
+    }
+
+    static Notification buildIncomingCallNotification(
+            Context context,
+            String caller,
+            boolean video,
+            Icon avatar,
+            PendingIntent target
+    ) {
+        PendingIntent contentIntent = WeChatLaunchProxyActivity.wrap(
+                context,
+                "call:incoming:content",
+                target
+        );
+        PendingIntent declineIntent = WeChatLaunchProxyActivity.wrap(
+                context,
+                "call:incoming:decline",
+                target
+        );
+        PendingIntent answerIntent = WeChatLaunchProxyActivity.wrap(
+                context,
+                "call:incoming:answer",
+                target
+        );
+        if (contentIntent == null || declineIntent == null || answerIntent == null) return null;
+
+        Icon callIcon = Icon.createWithResource(
+                context,
+                video ? R.drawable.ic_material_videocam_24 : R.drawable.ic_material_call_24
+        );
+        Notification.Builder builder = new Notification.Builder(
+                context,
+                NotificationChannels.WECHAT_CALLS
+        )
+                .setSmallIcon(callIcon)
+                .setContentTitle(caller)
+                .setContentText(context.getString(video
+                        ? R.string.wechat_incoming_video_call
+                        : R.string.wechat_incoming_voice_call))
+                .setShowWhen(false)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_CALL)
+                .setColor(0xff33b332)
+                .setContentIntent(contentIntent)
+                // Android API 37 rejects CallStyle notifications that are not attached to an
+                // FGS/UIJ unless they carry a full-screen intent. Reuse the accepted WeChat
+                // launch proxy so locked-screen behavior remains equivalent to the source call.
+                .setFullScreenIntent(contentIntent, true);
+        if (avatar != null) builder.setLargeIcon(avatar);
+
+        if (Build.VERSION.SDK_INT >= 31) {
+            Person.Builder personBuilder = new Person.Builder()
+                    .setName(caller)
+                    .setImportant(true);
+            if (avatar != null) personBuilder.setIcon(avatar);
+            Person callerPerson = personBuilder.build();
+            builder.setStyle(Notification.CallStyle.forIncomingCall(
+                    callerPerson,
+                    declineIntent,
+                    answerIntent
+            ).setIsVideo(video));
+            builder.addPerson(callerPerson);
+        } else {
+            builder.addAction(new Notification.Action.Builder(
+                    callIcon,
+                    context.getString(R.string.call_action_decline),
+                    declineIntent
+            ).build());
+            builder.addAction(new Notification.Action.Builder(
+                    callIcon,
+                    context.getString(R.string.call_action_answer),
+                    answerIntent
+            ).build());
+        }
+        return builder.build();
+    }
+
+    private boolean postConnectedCallReplacement() {
+        String caller = callSession.displayCaller(this);
+        Icon callIcon = callIcon(callSession.video);
+        Icon avatar = cachedCallAvatar(caller);
+        Notification.Builder builder = new Notification.Builder(
+                this,
+                NotificationChannels.WECHAT_CALLS
+        )
+                .setSmallIcon(callIcon)
+                .setContentTitle(caller)
+                .setContentText(getString(R.string.wechat_call_in_progress))
+                .setWhen(callSession.connectedAt)
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(false)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_CALL)
+                .setColor(0xff33b332);
+        if (avatar != null) builder.setLargeIcon(avatar);
+
+        PendingIntent launchIntent = WeChatLaunchProxyActivity.wrap(
+                this,
+                "call:ongoing",
+                callSession.launchTarget
+        );
+        if (launchIntent != null) builder.setContentIntent(launchIntent);
+
+        try {
+            Notification notification = CallProgressStyle.build(builder, callIcon);
+            if (Build.VERSION.SDK_INT >= 36) {
+                Log.i(TAG, "voip promotedAllowed="
+                        + getSystemService(NotificationManager.class).canPostPromotedNotifications()
+                        + ", promotable=" + notification.hasPromotableCharacteristics());
+            }
+            getSystemService(NotificationManager.class).notify(CALL_REPLACEMENT_ID, notification);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to post connected WeChat Live Update", e);
+            return false;
+        }
+    }
+
+    private Icon cachedCallAvatar(String caller) {
+        Bitmap bitmap = ConversationShortcuts.loadConversationAvatar(
+                this,
+                "wechat:" + caller
+        );
+        return bitmap == null ? null : Icon.createWithBitmap(bitmap);
+    }
+
+    private Icon callIcon(boolean video) {
+        return Icon.createWithResource(
+                this,
+                video ? R.drawable.ic_material_videocam_24 : R.drawable.ic_material_call_24
+        );
+    }
+
+    private void hideCallStatusOriginal(StatusBarNotification sbn) {
+        if (shouldUseRollingCallStatusSnooze(
+                callSession.connected,
+                sbn.getNotification().flags
+        )) {
+            hideConnectedCallStatusOriginal(sbn.getKey());
+            return;
+        }
+        cancelOriginal(sbn, "pre-connect call status");
+    }
+
+    private void hideConnectedCallStatusOriginal(String key) {
+        if (key == null || !isRewriteCurrentlyEnabled()) return;
+        try {
+            selfHiddenOriginals.add(key);
+            // Once the replacement Live Update exists, keep the protected WeChat FGS source
+            // out of the shade with a renewable short snooze. The small window avoids carrying
+            // this reused key into a later call as the previous 30-minute snooze did.
+            POST_DEDUPLICATOR.forget(key);
+            snoozeNotification(key, CONNECTED_CALL_STATUS_SNOOZE_DURATION_MS);
+            mainHandler.postDelayed(
+                    () -> selfHiddenOriginals.remove(key),
+                    CONNECTED_CALL_STATUS_SNOOZE_DURATION_MS
+                            + SELF_HIDDEN_CANCEL_MARKER_DURATION_MS
+            );
+            Log.d(TAG, "short-snooze connected wechat call status"
+                    + ", durationMs=" + CONNECTED_CALL_STATUS_SNOOZE_DURATION_MS
+                    + ", key=" + key);
+        } catch (RuntimeException e) {
+            selfHiddenOriginals.remove(key);
+            Log.w(TAG, "failed to short-snooze connected call status: " + key, e);
+        }
+    }
+
+    private void hideIncomingCallOriginal(StatusBarNotification sbn) {
+        if (!isRewriteCurrentlyEnabled()) return;
+        try {
+            selfHiddenOriginals.add(sbn.getKey());
+            // The source is ongoing and Android ignores listener cancel. A short renewable
+            // snooze hides it without suppressing the same key for the next call for minutes.
+            POST_DEDUPLICATOR.forget(sbn.getKey());
+            snoozeNotification(sbn.getKey(), INCOMING_CALL_SNOOZE_DURATION_MS);
+            Log.d(TAG, "short-snooze incoming wechat notification"
+                    + ", durationMs=" + INCOMING_CALL_SNOOZE_DURATION_MS
+                    + ", key=" + sbn.getKey());
+        } catch (RuntimeException e) {
+            selfHiddenOriginals.remove(sbn.getKey());
+            Log.w(TAG, "failed to short-snooze incoming notification: " + sbn.getKey(), e);
+        }
+    }
+
+    private void scheduleConnectedStatusFallback(int confirmationGeneration) {
+        mainHandler.postDelayed(() -> {
+            if (confirmationGeneration != callSession.connectionGeneration
+                    || callSession.connected
+                    || callSession.connectedCandidateAt <= 0L
+                    || callSession.statusSource == null) {
+                return;
+            }
+            if (promoteConnectedCall(
+                    System.currentTimeMillis(),
+                    "10-second foreground-service fallback"
+            )) {
+                hideConnectedCallStatusOriginal(callSession.statusKey);
+            }
+        }, CONNECTED_STATUS_FALLBACK_DELAY_MS);
+    }
+
+    private void cancelOriginal(StatusBarNotification sbn, String source) {
+        cancelOriginal(sbn.getKey(), source);
+    }
+
+    private void cancelOriginal(String key, String source) {
+        if (key == null) return;
+        if (!isRewriteCurrentlyEnabled()) {
+            Log.w(TAG, "refusing to cancel original while notification rewriting is disabled"
+                    + ", source=" + source
+                    + ", key=" + key);
+            return;
+        }
+        try {
+            selfHiddenOriginals.add(key);
+            cancelNotification(key);
+            // A listener cancel can be ignored for an ongoing/FGS source. Do not let its marker
+            // survive long enough to consume a later genuine APP_CANCEL for the same reused key.
+            mainHandler.postDelayed(
+                    () -> selfHiddenOriginals.remove(key),
+                    SELF_HIDDEN_CANCEL_MARKER_DURATION_MS
+            );
+            Log.d(TAG, "cancel original wechat notification"
+                    + ", source=" + source
+                    + ", key=" + key);
+        } catch (RuntimeException e) {
+            selfHiddenOriginals.remove(key);
+            Log.w(TAG, "failed to cancel original"
+                    + ", source=" + source
+                    + ", key=" + key, e);
+        }
+    }
+
+    private void scheduleIncomingCallTimeout(int generation) {
+        mainHandler.postDelayed(() -> {
+            if (generation != callSession.generation || callSession.connected) return;
+            endCallSession("incoming call timeout");
+        }, CALL_RINGING_TIMEOUT_MS);
+    }
+
+    private void cancelIncomingCallReplacement(String reason) {
+        if (callSession.connected || !callSession.incomingVisible) return;
+        cancelCallNotification(this);
+        callSession.incomingVisible = false;
+        Log.i(TAG, "cancel incoming WeChat CallStyle: " + reason);
+    }
+
+    private void endCallSession(String reason) {
+        cancelCallNotification(this);
+        callSession.reset();
+        Log.i(TAG, "end rewritten WeChat call session: " + reason);
+    }
+
+    static void cancelCallNotification(Context context) {
+        context.getSystemService(NotificationManager.class).cancel(CALL_REPLACEMENT_ID);
+    }
+
+    private static boolean isWeChatComponent(String componentName) {
+        return componentName != null && (componentName.startsWith(WECHAT_PACKAGE + "/")
+                || componentName.startsWith(WECHAT_PACKAGE + ":"));
+    }
+
     private void postVoipReplacement(StatusBarNotification sbn, ParsedVoipNotification voip,
                                      Notification original) {
         long startedAt = original.when > 0 ? original.when : sbn.getPostTime();
@@ -760,11 +1351,22 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private void hideOriginal(StatusBarNotification sbn) {
+        hideOriginal(sbn, ORIGINAL_SNOOZE_DURATION_MS);
+    }
+
+    private void hideOriginal(StatusBarNotification sbn, long snoozeDurationMs) {
+        if (!isRewriteCurrentlyEnabled()) {
+            Log.w(TAG, "refusing to hide original while notification rewriting is disabled"
+                    + ", key=" + sbn.getKey());
+            return;
+        }
         try {
             selfHiddenOriginals.add(sbn.getKey());
             if (shouldSnoozeOriginal(sbn.getNotification().flags)) {
-                snoozeNotification(sbn.getKey(), ORIGINAL_SNOOZE_DURATION_MS);
-                Log.d(TAG, "snooze protected original wechat notification: " + sbn.getKey());
+                snoozeNotification(sbn.getKey(), snoozeDurationMs);
+                Log.d(TAG, "snooze protected original wechat notification"
+                        + ", durationMs=" + snoozeDurationMs
+                        + ", key=" + sbn.getKey());
             } else {
                 cancelNotification(sbn.getKey());
                 Log.d(TAG, "cancel original wechat notification: " + sbn.getKey());
@@ -777,6 +1379,10 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     static boolean shouldSnoozeOriginal(int flags) {
         return (flags & (Notification.FLAG_FOREGROUND_SERVICE | Notification.FLAG_NO_CLEAR)) != 0;
+    }
+
+    static boolean shouldUseRollingCallStatusSnooze(boolean connected, int flags) {
+        return connected && shouldSnoozeOriginal(flags);
     }
 
     static boolean shouldClearBubblesAfterWeChatRemoval(int reason) {
@@ -810,7 +1416,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private static int voipReplacementId(StatusBarNotification sbn) {
-        return stableId("wechat:voip:" + sbn.getId() + ":" + sbn.getTag());
+        return CALL_REPLACEMENT_ID;
     }
 
     private static int userIdFromKey(String key) {
@@ -869,6 +1475,77 @@ public class WeChatNotificationService extends NotificationListenerService {
             this.originalKey = originalKey;
             this.conversationKey = conversationKey;
             this.replacementId = replacementId;
+        }
+    }
+
+    private static final class CallSession {
+        String incomingKey;
+        CancelEventKey incomingSource;
+        String statusKey;
+        CancelEventKey statusSource;
+        String caller;
+        boolean video;
+        PendingIntent launchTarget;
+        boolean incomingVisible;
+        boolean connected;
+        long connectedAt;
+        long connectedCandidateAt;
+        int generation;
+        int connectionGeneration;
+
+        void updateCaller(String candidate) {
+            if (TextUtils.isEmpty(candidate)) return;
+            boolean generic = "WeChat".equalsIgnoreCase(candidate) || "微信".equals(candidate);
+            if (!generic || TextUtils.isEmpty(caller)) caller = candidate;
+        }
+
+        String displayCaller(Context context) {
+            return TextUtils.isEmpty(caller)
+                    ? context.getString(R.string.wechat_call_title)
+                    : caller;
+        }
+
+        boolean matchesIncoming(CancelEventKey eventKey) {
+            return incomingSource != null && incomingSource.equals(eventKey);
+        }
+
+        boolean matchesStatus(CancelEventKey eventKey) {
+            return statusSource != null && statusSource.equals(eventKey);
+        }
+
+        boolean hasActiveState() {
+            return incomingSource != null
+                    || statusSource != null
+                    || incomingVisible
+                    || connected;
+        }
+
+        void clearIncoming() {
+            incomingKey = null;
+            incomingSource = null;
+            incomingVisible = false;
+        }
+
+        void clearConnectedCandidate() {
+            if (connectedCandidateAt <= 0L) return;
+            connectedCandidateAt = 0L;
+            connectionGeneration++;
+        }
+
+        void reset() {
+            incomingKey = null;
+            incomingSource = null;
+            statusKey = null;
+            statusSource = null;
+            caller = null;
+            video = false;
+            launchTarget = null;
+            incomingVisible = false;
+            connected = false;
+            connectedAt = 0L;
+            connectedCandidateAt = 0L;
+            generation++;
+            connectionGeneration++;
         }
     }
 

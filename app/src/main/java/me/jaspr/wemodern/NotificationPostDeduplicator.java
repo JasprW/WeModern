@@ -23,6 +23,10 @@ final class NotificationPostDeduplicator {
         return true;
     }
 
+    synchronized void forget(String key) {
+        if (key != null) latestPosts.remove(key);
+    }
+
     private static final class PostIdentity {
         final long postTime;
         final long notificationWhen;

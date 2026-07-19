@@ -11,6 +11,12 @@
     <string name="section_setup">設定</string>
     <string name="section_bubbles">泡泡</string>
     <string name="section_advanced">進階功能</string>
+    <string name="section_debug">除錯</string>
+    <string name="debug_capture_logging_title">擷取與日誌</string>
+    <string name="debug_capture_logging_description">將攔截到的微信通知事件記錄至 logcat 與 JSONL</string>
+    <string name="debug_rewrite_notifications_title">重寫通知</string>
+    <string name="debug_rewrite_notifications_enabled_description">解析、隱藏並替換可辨識的微信通知</string>
+    <string name="debug_rewrite_notifications_disabled_description">維持微信通知原樣，不執行重寫</string>
     <string name="app_icon_open_wechat_title">圖示直達微信</string>
     <string name="app_icon_open_wechat_description">點選 WeModern 圖示時直接開啟微信</string>
     <string name="app_icon_open_wechat_locked_description">完成必要的通知設定後可開啟</string>
@@ -75,12 +81,18 @@
     <string name="setup_state_running">執行狀態</string>
     <string name="setup_state_required">必要設定</string>
     <string name="setup_ready_title">已就緒</string>
+    <string name="setup_debug_only_title">僅除錯</string>
+    <string name="setup_off_title">關閉</string>
     <string name="setup_ready_message">微信通知重寫正在執行</string>
+    <string name="setup_ready_capture_message">正在擷取微信原始通知；通知重寫已關閉</string>
+    <string name="setup_ready_passthrough_message">微信通知維持原樣；擷取與重寫均已關閉</string>
     <plurals name="setup_remaining_steps">
         <item quantity="other">還差 %1$d 步</item>
     </plurals>
     <string name="setup_remaining_message">完成後即可接管微信訊息與通話通知</string>
     <string name="capability_notification_rewrite">通知重寫</string>
+    <string name="capability_capture_logging">擷取與日誌</string>
+    <string name="capability_passthrough">原樣傳遞</string>
     <string name="setup_notification_access_title">通知使用權</string>
     <string name="setup_notification_access_description">讀取並重寫微信通知</string>
     <string name="setup_post_notifications_title">傳送通知</string>
@@ -156,6 +168,10 @@
     <string name="test_video_call_text">視訊通話中</string>
     <string name="wechat_call_title">微信通話</string>
     <string name="wechat_call_in_progress">通話中</string>
+    <string name="wechat_incoming_voice_call">微信語音來電</string>
+    <string name="wechat_incoming_video_call">微信視訊來電</string>
+    <string name="call_action_answer">接聽</string>
+    <string name="call_action_decline">拒絕</string>
     <string name="channel_wechat_messages">微信訊息</string>
     <string name="channel_wechat_messages_description">重寫後的微信訊息通知</string>
     <string name="channel_wechat_bubble_mode_conversations">微信對話通知</string>

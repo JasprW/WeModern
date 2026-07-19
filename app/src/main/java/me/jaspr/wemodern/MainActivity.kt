@@ -30,6 +30,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -50,6 +51,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -58,6 +62,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.BatterySaver
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChatBubble
@@ -71,6 +76,7 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneInTalk
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sync
@@ -129,12 +135,13 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var setupState by mutableStateOf(SetupState())
-    private val conversationPreferencesListener =
+    private val preferencesListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             setupState = readSetupState()
         }
@@ -143,8 +150,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ConversationBubblePreferences.registerListener(
             this,
-            conversationPreferencesListener,
+            preferencesListener,
         )
+        NotificationDebugPreferences.registerListener(this, preferencesListener)
         enableEdgeToEdge()
         NotificationChannels.ensure(this)
         getSystemService(NotificationManager::class.java).apply {
@@ -224,6 +232,14 @@ class MainActivity : ComponentActivity() {
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
                     },
+                    onSetDebugCaptureLoggingEnabled = { enabled ->
+                        NotificationDebugPreferences.setCaptureLoggingEnabled(this, enabled)
+                        setupState = readSetupState()
+                    },
+                    onSetRewriteNotificationsEnabled = { enabled ->
+                        NotificationDebugPreferences.setRewriteEnabled(this, enabled)
+                        setupState = readSetupState()
+                    },
                     onCopySyncCommands = { copySyncCommands() },
                     onPostMessageTest = { postTestNotification() },
                     onPostVoiceCallTest = { postCallTestNotification(video = false) },
@@ -251,8 +267,9 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         ConversationBubblePreferences.unregisterListener(
             this,
-            conversationPreferencesListener,
+            preferencesListener,
         )
+        NotificationDebugPreferences.unregisterListener(this, preferencesListener)
         super.onDestroy()
     }
 
@@ -315,6 +332,9 @@ class MainActivity : ComponentActivity() {
             batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
             readLogsGranted = hasReadLogsPermission(),
             notificationServiceDebugEnabled = isNotificationServiceDebugEnabled(),
+            debugCaptureLoggingEnabled =
+                NotificationDebugPreferences.isCaptureLoggingEnabled(this),
+            rewriteNotificationsEnabled = NotificationDebugPreferences.isRewriteEnabled(this),
         )
     }
 
@@ -639,6 +659,10 @@ private data class SetupState(
     val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
     val notificationServiceDebugEnabled: Boolean = false,
+    val debugCaptureLoggingEnabled: Boolean =
+        NotificationDebugPreferences.DEFAULT_CAPTURE_LOGGING_ENABLED,
+    val rewriteNotificationsEnabled: Boolean =
+        NotificationDebugPreferences.DEFAULT_REWRITE_ENABLED,
 ) {
     val coreReady: Boolean
         get() = notificationListenerEnabled && postNotificationsGranted
@@ -691,7 +715,25 @@ private enum class SetupStatusTone {
     Neutral,
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal enum class SetupHeroMode {
+    Required,
+    Off,
+    DebugOnly,
+    AllSet,
+}
+
+internal fun resolveSetupHeroMode(
+    coreReady: Boolean,
+    captureLoggingEnabled: Boolean,
+    rewriteNotificationsEnabled: Boolean,
+): SetupHeroMode = when {
+    !coreReady -> SetupHeroMode.Required
+    rewriteNotificationsEnabled -> SetupHeroMode.AllSet
+    captureLoggingEnabled -> SetupHeroMode.DebugOnly
+    else -> SetupHeroMode.Off
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun WeModernApp(
     state: SetupState,
@@ -713,6 +755,8 @@ private fun WeModernApp(
         String,
         ConversationBubblePreferences.Override,
     ) -> Unit,
+    onSetDebugCaptureLoggingEnabled: (Boolean) -> Unit,
+    onSetRewriteNotificationsEnabled: (Boolean) -> Unit,
     onCopySyncCommands: () -> Unit,
     onPostMessageTest: () -> Unit,
     onPostVoiceCallTest: () -> Unit,
@@ -739,6 +783,12 @@ private fun WeModernApp(
         }
         Unit
     }
+    val settingsListState = rememberLazyListState(
+        cacheWindow = LazyLayoutCacheWindow(
+            aheadFraction = 1.5f,
+            behindFraction = 0.5f,
+        ),
+    )
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -770,83 +820,99 @@ private fun WeModernApp(
                 .padding(padding),
         ) {
             LazyColumn(
+                state = settingsListState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 600.dp)
                     .align(Alignment.TopCenter)
                     .padding(horizontal = 20.dp),
-                contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp),
-                verticalArrangement = Arrangement.spacedBy(28.dp),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.Top,
             ) {
-                item {
-                    SetupHero(
-                        state = state,
-                        onOpenListenerSettings = onOpenListenerSettings,
-                        onRequestNotifications = onRequestNotifications,
-                    )
-                }
-                item {
-                    SettingsSection(
-                        state = state,
-                        onOpenListenerSettings = onOpenListenerSettings,
-                        onRequestNotifications = onRequestNotifications,
-                        onOpenChatBubbleSettings = onOpenChatBubbleSettings,
-                        onOpenPromotedNotificationSettings = onOpenPromotedNotificationSettings,
-                        onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
-                    )
-                }
-                if (state.chatBubblesAvailable) {
-                    item {
-                        BubbleSection(
+                item(key = "setup_hero", contentType = "hero") {
+                    SettingsPageItem(spacingAfter = 28.dp) {
+                        SetupHero(
                             state = state,
-                            onSetChatBubblesEnabled = onSetChatBubblesEnabled,
-                            onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
-                            onOpenBubbleHostChannelSettings =
-                                onOpenBubbleHostChannelSettings,
-                            onSetDefaultPrivateBubblesEnabled =
-                                onSetDefaultPrivateBubblesEnabled,
-                            onSetDefaultGroupBubblesEnabled =
-                                onSetDefaultGroupBubblesEnabled,
-                            onOpenConversationSettings = {
-                                showConversationSettings = true
+                            onOpenListenerSettings = onOpenListenerSettings,
+                            onRequestNotifications = onRequestNotifications,
+                        )
+                    }
+                }
+                settingsSectionItems(
+                    state = state,
+                    onOpenListenerSettings = onOpenListenerSettings,
+                    onRequestNotifications = onRequestNotifications,
+                    onOpenChatBubbleSettings = onOpenChatBubbleSettings,
+                    onOpenPromotedNotificationSettings = onOpenPromotedNotificationSettings,
+                    onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
+                )
+                if (state.chatBubblesAvailable) {
+                    bubbleSectionItems(
+                        state = state,
+                        onSetChatBubblesEnabled = onSetChatBubblesEnabled,
+                        onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
+                        onOpenBubbleHostChannelSettings = onOpenBubbleHostChannelSettings,
+                        onSetDefaultPrivateBubblesEnabled =
+                            onSetDefaultPrivateBubblesEnabled,
+                        onSetDefaultGroupBubblesEnabled = onSetDefaultGroupBubblesEnabled,
+                        onOpenConversationSettings = {
+                            showConversationSettings = true
+                        },
+                    )
+                }
+                item(key = "advanced", contentType = "advanced_section") {
+                    SettingsPageItem(spacingAfter = 28.dp) {
+                        AdvancedSection(
+                            state = state,
+                            syncExpanded = syncExpanded,
+                            syncCommands = syncCommands,
+                            onSetAppIconOpensWeChat = { enabled ->
+                                onSetAppIconOpensWeChat(enabled)
+                                if (enabled) showAppIconShortcutTip = true
+                            },
+                            onToggleSyncExpanded = { syncExpanded = !syncExpanded },
+                            onCopySyncCommands = {
+                                onCopySyncCommands()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(commandsCopiedText)
+                                }
                             },
                         )
                     }
                 }
-                item {
-                    AdvancedSection(
-                        state = state,
-                        syncExpanded = syncExpanded,
-                        syncCommands = syncCommands,
-                        onSetAppIconOpensWeChat = { enabled ->
-                            onSetAppIconOpensWeChat(enabled)
-                            if (enabled) showAppIconShortcutTip = true
-                        },
-                        onToggleSyncExpanded = { syncExpanded = !syncExpanded },
-                        onCopySyncCommands = {
-                            onCopySyncCommands()
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar(commandsCopiedText)
-                            }
-                        },
-                    )
+                item(key = "debug", contentType = "debug_section") {
+                    SettingsPageItem(spacingAfter = 28.dp) {
+                        DebugSection(
+                            state = state,
+                            onSetCaptureLoggingEnabled = onSetDebugCaptureLoggingEnabled,
+                            onSetRewriteNotificationsEnabled = onSetRewriteNotificationsEnabled,
+                        )
+                    }
                 }
-                item {
-                    TestsSection(
-                        enabled = state.coreReady,
-                        onPostMessageTest = {
-                            onPostMessageTest()
-                            coroutineScope.launch { snackbarHostState.showSnackbar(messageSentText) }
-                        },
-                        onPostVoiceCallTest = {
-                            onPostVoiceCallTest()
-                            coroutineScope.launch { snackbarHostState.showSnackbar(voiceSentText) }
-                        },
-                        onPostVideoCallTest = {
-                            onPostVideoCallTest()
-                            coroutineScope.launch { snackbarHostState.showSnackbar(videoSentText) }
-                        },
-                    )
+                item(key = "tests", contentType = "tests_section") {
+                    SettingsPageItem(spacingAfter = 28.dp) {
+                        TestsSection(
+                            enabled = state.coreReady,
+                            onPostMessageTest = {
+                                onPostMessageTest()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(messageSentText)
+                                }
+                            },
+                            onPostVoiceCallTest = {
+                                onPostVoiceCallTest()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(voiceSentText)
+                                }
+                            },
+                            onPostVideoCallTest = {
+                                onPostVideoCallTest()
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(videoSentText)
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -933,24 +999,66 @@ private fun WeModernApp(
 }
 
 @Composable
+private fun SettingsPageItem(
+    spacingAfter: Dp,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = spacingAfter),
+    ) {
+        content()
+    }
+}
+
+private fun LazyListScope.settingsPageItem(
+    key: String,
+    contentType: String,
+    spacingAfter: Dp,
+    content: @Composable () -> Unit,
+) {
+    item(key = key, contentType = contentType) {
+        SettingsPageItem(spacingAfter = spacingAfter, content = content)
+    }
+}
+
+@Composable
 private fun SetupHero(
     state: SetupState,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
 ) {
     val isReady = state.coreReady
-    val containerColor = if (isReady) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.tertiaryContainer
+    val mode = resolveSetupHeroMode(
+        coreReady = isReady,
+        captureLoggingEnabled = state.debugCaptureLoggingEnabled,
+        rewriteNotificationsEnabled = state.rewriteNotificationsEnabled,
+    )
+    val containerColor = when (mode) {
+        SetupHeroMode.AllSet -> MaterialTheme.colorScheme.primaryContainer
+        SetupHeroMode.DebugOnly,
+        SetupHeroMode.Required -> MaterialTheme.colorScheme.tertiaryContainer
+        SetupHeroMode.Off -> MaterialTheme.colorScheme.surfaceContainerHighest
     }
-    val contentColor = if (isReady) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onTertiaryContainer
+    val contentColor = when (mode) {
+        SetupHeroMode.AllSet -> MaterialTheme.colorScheme.onPrimaryContainer
+        SetupHeroMode.DebugOnly,
+        SetupHeroMode.Required -> MaterialTheme.colorScheme.onTertiaryContainer
+        SetupHeroMode.Off -> MaterialTheme.colorScheme.onSurface
     }
-    val accentColor = if (isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
-    val accentContentColor = if (isReady) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onTertiary
+    val accentColor = when (mode) {
+        SetupHeroMode.AllSet -> MaterialTheme.colorScheme.primary
+        SetupHeroMode.DebugOnly,
+        SetupHeroMode.Required -> MaterialTheme.colorScheme.tertiary
+        SetupHeroMode.Off -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val accentContentColor = when (mode) {
+        SetupHeroMode.AllSet -> MaterialTheme.colorScheme.onPrimary
+        SetupHeroMode.DebugOnly,
+        SetupHeroMode.Required -> MaterialTheme.colorScheme.onTertiary
+        SetupHeroMode.Off -> MaterialTheme.colorScheme.surface
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -979,7 +1087,12 @@ private fun SetupHero(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = if (isReady) Icons.Rounded.Check else Icons.Rounded.Bolt,
+                            imageVector = when (mode) {
+                                SetupHeroMode.Required -> Icons.Rounded.Bolt
+                                SetupHeroMode.Off -> Icons.Rounded.PowerSettingsNew
+                                SetupHeroMode.DebugOnly -> Icons.Rounded.BugReport
+                                SetupHeroMode.AllSet -> Icons.Rounded.Check
+                            },
                             contentDescription = null,
                             modifier = Modifier.size(28.dp),
                         )
@@ -995,7 +1108,14 @@ private fun SetupHero(
                     )
                     Text(
                         text = if (isReady) {
-                            stringResource(R.string.setup_ready_title)
+                            stringResource(
+                                when (mode) {
+                                    SetupHeroMode.Off -> R.string.setup_off_title
+                                    SetupHeroMode.DebugOnly -> R.string.setup_debug_only_title
+                                    SetupHeroMode.AllSet -> R.string.setup_ready_title
+                                    SetupHeroMode.Required -> R.string.setup_ready_title
+                                }
+                            )
                         } else {
                             pluralStringResource(
                                 R.plurals.setup_remaining_steps,
@@ -1011,9 +1131,12 @@ private fun SetupHero(
             }
 
             Text(
-                text = stringResource(
-                    if (isReady) R.string.setup_ready_message else R.string.setup_remaining_message
-                ),
+                text = stringResource(when {
+                    !isReady -> R.string.setup_remaining_message
+                    state.rewriteNotificationsEnabled -> R.string.setup_ready_message
+                    state.debugCaptureLoggingEnabled -> R.string.setup_ready_capture_message
+                    else -> R.string.setup_ready_passthrough_message
+                }),
                 style = MaterialTheme.typography.bodyLarge,
             )
 
@@ -1022,12 +1145,21 @@ private fun SetupHero(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    CapabilityPill(text = stringResource(R.string.capability_notification_rewrite))
-                    if (state.promotedNotificationsAllowed) {
-                        CapabilityPill(text = stringResource(R.string.status_live_update_label))
+                    if (state.debugCaptureLoggingEnabled) {
+                        CapabilityPill(text = stringResource(R.string.capability_capture_logging))
                     }
-                    if (state.chatBubblesReady) {
-                        CapabilityPill(text = stringResource(R.string.chat_bubbles_title))
+                    if (state.rewriteNotificationsEnabled) {
+                        CapabilityPill(
+                            text = stringResource(R.string.capability_notification_rewrite)
+                        )
+                        if (state.promotedNotificationsAllowed) {
+                            CapabilityPill(text = stringResource(R.string.status_live_update_label))
+                        }
+                        if (state.chatBubblesReady) {
+                            CapabilityPill(text = stringResource(R.string.chat_bubbles_title))
+                        }
+                    } else if (!state.debugCaptureLoggingEnabled) {
+                        CapabilityPill(text = stringResource(R.string.capability_passthrough))
                     }
                 }
             } else {
@@ -1090,8 +1222,7 @@ private fun CapabilityPill(text: String) {
     }
 }
 
-@Composable
-private fun SettingsSection(
+private fun LazyListScope.settingsSectionItems(
     state: SetupState,
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
@@ -1113,105 +1244,165 @@ private fun SettingsSection(
         bottomEnd = 28.dp,
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    settingsPageItem(
+        key = "setup_header",
+        contentType = "header",
+        spacingAfter = 12.dp,
+    ) {
         SectionHeader(title = stringResource(R.string.section_setup))
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    }
+    settingsPageItem(
+        key = "setup_notification_access",
+        contentType = "setting_row",
+        spacingAfter = 4.dp,
+    ) {
+        SettingRow(
+            title = stringResource(R.string.setup_notification_access_title),
+            supporting = stringResource(R.string.setup_notification_access_description),
+            icon = Icons.Rounded.Security,
+            status = stringResource(
+                if (state.notificationListenerEnabled) {
+                    R.string.setup_status_enabled
+                } else {
+                    R.string.setup_status_pending
+                }
+            ),
+            statusTone = if (state.notificationListenerEnabled) {
+                SetupStatusTone.Success
+            } else {
+                SetupStatusTone.Attention
+            },
+            highlighted = state.nextRequiredStep == RequiredSetupStep.NotificationAccess,
+            shape = firstShape,
+            onClick = if (state.notificationListenerEnabled) null else onOpenListenerSettings,
+        )
+    }
+    settingsPageItem(
+        key = "setup_post_notifications",
+        contentType = "setting_row",
+        spacingAfter = 4.dp,
+    ) {
+        SettingRow(
+            title = stringResource(R.string.setup_post_notifications_title),
+            supporting = stringResource(R.string.setup_post_notifications_description),
+            icon = Icons.Rounded.NotificationsActive,
+            status = stringResource(
+                if (state.postNotificationsGranted) {
+                    R.string.setup_status_enabled
+                } else {
+                    R.string.setup_status_pending
+                }
+            ),
+            statusTone = if (state.postNotificationsGranted) {
+                SetupStatusTone.Success
+            } else {
+                SetupStatusTone.Attention
+            },
+            highlighted = state.nextRequiredStep == RequiredSetupStep.PostNotifications,
+            shape = middleShape,
+            onClick = if (state.postNotificationsGranted) null else onRequestNotifications,
+        )
+    }
+    if (state.chatBubblesAvailable) {
+        settingsPageItem(
+            key = "setup_bubble_permission",
+            contentType = "setting_row",
+            spacingAfter = 4.dp,
+        ) {
             SettingRow(
-                title = stringResource(R.string.setup_notification_access_title),
-                supporting = stringResource(R.string.setup_notification_access_description),
-                icon = Icons.Rounded.Security,
-                status = stringResource(
-                    if (state.notificationListenerEnabled) R.string.setup_status_enabled else R.string.setup_status_pending
-                ),
-                statusTone = if (state.notificationListenerEnabled) SetupStatusTone.Success else SetupStatusTone.Attention,
-                highlighted = state.nextRequiredStep == RequiredSetupStep.NotificationAccess,
-                shape = firstShape,
-                onClick = if (state.notificationListenerEnabled) null else onOpenListenerSettings,
-            )
-            SettingRow(
-                title = stringResource(R.string.setup_post_notifications_title),
-                supporting = stringResource(R.string.setup_post_notifications_description),
-                icon = Icons.Rounded.NotificationsActive,
-                status = stringResource(
-                    if (state.postNotificationsGranted) R.string.setup_status_enabled else R.string.setup_status_pending
-                ),
-                statusTone = if (state.postNotificationsGranted) SetupStatusTone.Success else SetupStatusTone.Attention,
-                highlighted = state.nextRequiredStep == RequiredSetupStep.PostNotifications,
-                shape = middleShape,
-                onClick = if (state.postNotificationsGranted) null else onRequestNotifications,
-            )
-            if (state.chatBubblesAvailable) {
-                SettingRow(
-                    title = stringResource(R.string.chat_bubbles_system_title),
-                    supporting = stringResource(
-                        if (state.chatBubblesSystemAllowed) {
-                            R.string.chat_bubbles_system_allowed_description
-                        } else {
-                            R.string.chat_bubbles_system_required_description
-                        }
-                    ),
-                    icon = Icons.Rounded.ChatBubble,
-                    status = stringResource(
-                        if (state.chatBubblesSystemAllowed) {
-                            R.string.setup_status_enabled
-                        } else {
-                            R.string.setup_status_pending
-                        }
-                    ),
-                    statusTone = if (state.chatBubblesSystemAllowed) {
-                        SetupStatusTone.Success
+                title = stringResource(R.string.chat_bubbles_system_title),
+                supporting = stringResource(
+                    if (state.chatBubblesSystemAllowed) {
+                        R.string.chat_bubbles_system_allowed_description
                     } else {
-                        SetupStatusTone.Attention
-                    },
-                    highlighted = false,
-                    shape = middleShape,
-                    onClick = if (state.chatBubblesSystemAllowed) {
-                        null
-                    } else {
-                        onOpenChatBubbleSettings
-                    },
-                )
-            }
-            if (state.liveUpdatesAvailable) {
-                val liveUpdateBlocked = !state.postNotificationsGranted
-                SettingRow(
-                    title = stringResource(R.string.status_live_update_label),
-                    supporting = stringResource(R.string.setup_live_update_description),
-                    icon = Icons.Rounded.Timeline,
-                    status = stringResource(
-                        when {
-                            state.promotedNotificationsAllowed -> R.string.setup_status_enabled
-                            liveUpdateBlocked -> R.string.setup_status_requires_notifications
-                            else -> R.string.setup_status_recommended
-                        }
-                    ),
-                    statusTone = when {
-                        state.promotedNotificationsAllowed -> SetupStatusTone.Success
-                        liveUpdateBlocked -> SetupStatusTone.Neutral
-                        else -> SetupStatusTone.Attention
-                    },
-                    highlighted = false,
-                    shape = middleShape,
-                    onClick = if (state.promotedNotificationsAllowed || liveUpdateBlocked) {
-                        null
-                    } else {
-                        onOpenPromotedNotificationSettings
-                    },
-                )
-            }
-            SettingRow(
-                title = stringResource(R.string.setup_battery_title),
-                supporting = stringResource(R.string.setup_battery_description),
-                icon = Icons.Rounded.BatterySaver,
-                status = stringResource(
-                    if (state.batteryOptimizationIgnored) R.string.setup_status_enabled else R.string.setup_status_recommended
+                        R.string.chat_bubbles_system_required_description
+                    }
                 ),
-                statusTone = if (state.batteryOptimizationIgnored) SetupStatusTone.Success else SetupStatusTone.Attention,
+                icon = Icons.Rounded.ChatBubble,
+                status = stringResource(
+                    if (state.chatBubblesSystemAllowed) {
+                        R.string.setup_status_enabled
+                    } else {
+                        R.string.setup_status_pending
+                    }
+                ),
+                statusTone = if (state.chatBubblesSystemAllowed) {
+                    SetupStatusTone.Success
+                } else {
+                    SetupStatusTone.Attention
+                },
                 highlighted = false,
-                shape = lastShape,
-                onClick = if (state.batteryOptimizationIgnored) null else onRequestIgnoreBatteryOptimization,
+                shape = middleShape,
+                onClick = if (state.chatBubblesSystemAllowed) {
+                    null
+                } else {
+                    onOpenChatBubbleSettings
+                },
             )
         }
+    }
+    if (state.liveUpdatesAvailable) {
+        settingsPageItem(
+            key = "setup_live_update",
+            contentType = "setting_row",
+            spacingAfter = 4.dp,
+        ) {
+            val liveUpdateBlocked = !state.postNotificationsGranted
+            SettingRow(
+                title = stringResource(R.string.status_live_update_label),
+                supporting = stringResource(R.string.setup_live_update_description),
+                icon = Icons.Rounded.Timeline,
+                status = stringResource(
+                    when {
+                        state.promotedNotificationsAllowed -> R.string.setup_status_enabled
+                        liveUpdateBlocked -> R.string.setup_status_requires_notifications
+                        else -> R.string.setup_status_recommended
+                    }
+                ),
+                statusTone = when {
+                    state.promotedNotificationsAllowed -> SetupStatusTone.Success
+                    liveUpdateBlocked -> SetupStatusTone.Neutral
+                    else -> SetupStatusTone.Attention
+                },
+                highlighted = false,
+                shape = middleShape,
+                onClick = if (state.promotedNotificationsAllowed || liveUpdateBlocked) {
+                    null
+                } else {
+                    onOpenPromotedNotificationSettings
+                },
+            )
+        }
+    }
+    settingsPageItem(
+        key = "setup_battery",
+        contentType = "setting_row",
+        spacingAfter = 28.dp,
+    ) {
+        SettingRow(
+            title = stringResource(R.string.setup_battery_title),
+            supporting = stringResource(R.string.setup_battery_description),
+            icon = Icons.Rounded.BatterySaver,
+            status = stringResource(
+                if (state.batteryOptimizationIgnored) {
+                    R.string.setup_status_enabled
+                } else {
+                    R.string.setup_status_recommended
+                }
+            ),
+            statusTone = if (state.batteryOptimizationIgnored) {
+                SetupStatusTone.Success
+            } else {
+                SetupStatusTone.Attention
+            },
+            highlighted = false,
+            shape = lastShape,
+            onClick = if (state.batteryOptimizationIgnored) {
+                null
+            } else {
+                onRequestIgnoreBatteryOptimization
+            },
+        )
     }
 }
 
@@ -1347,8 +1538,7 @@ private fun SectionHeader(title: String, supporting: String? = null) {
     }
 }
 
-@Composable
-private fun BubbleSection(
+private fun LazyListScope.bubbleSectionItems(
     state: SetupState,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
@@ -1357,174 +1547,204 @@ private fun BubbleSection(
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
     onOpenConversationSettings: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    settingsPageItem(
+        key = "bubbles_header",
+        contentType = "header",
+        spacingAfter = 12.dp,
+    ) {
         SectionHeader(
             title = stringResource(R.string.section_bubbles),
+        )
+    }
+    settingsPageItem(
+        key = "bubbles_enabled",
+        contentType = "switch_card",
+        spacingAfter = if (state.chatBubblesReady) 8.dp else 28.dp,
+    ) {
+        SettingsSwitchCard(
+            title = stringResource(R.string.chat_bubbles_enable_title),
             supporting = stringResource(
-                if (state.chatBubblesReady) {
-                    R.string.setup_status_enabled
-                } else {
-                    R.string.setup_status_missing
+                when {
+                    !state.coreReady -> R.string.chat_bubbles_locked_description
+                    !state.chatBubblesSystemAllowed -> {
+                        R.string.chat_bubbles_system_enable_required_description
+                    }
+                    state.chatBubblesEnabled -> R.string.chat_bubbles_enabled_description
+                    else -> R.string.chat_bubbles_disabled_description
                 }
             ),
+            icon = Icons.Rounded.ChatBubble,
+            checked = state.chatBubblesEnabled,
+            enabled = state.chatBubblesCanBeEnabled || state.chatBubblesEnabled,
+            onCheckedChange = onSetChatBubblesEnabled,
         )
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            BubbleSwitchCard(
-                title = stringResource(R.string.chat_bubbles_enable_title),
-                supporting = stringResource(
-                    when {
-                        !state.coreReady -> R.string.chat_bubbles_locked_description
-                        !state.chatBubblesSystemAllowed -> {
-                            R.string.chat_bubbles_system_enable_required_description
-                        }
-                        state.chatBubblesEnabled -> R.string.chat_bubbles_enabled_description
-                        else -> R.string.chat_bubbles_disabled_description
-                    }
-                ),
-                icon = Icons.Rounded.ChatBubble,
-                checked = state.chatBubblesEnabled,
-                enabled = state.chatBubblesCanBeEnabled || state.chatBubblesEnabled,
-                onCheckedChange = onSetChatBubblesEnabled,
+    }
+    if (!state.chatBubblesReady) return
+
+    if (state.bubbleTrampolineAvailable) {
+        settingsPageItem(
+            key = "bubble_trampoline",
+            contentType = "switch_card",
+            spacingAfter = 8.dp,
+        ) {
+            SettingsSwitchCard(
+                title = stringResource(R.string.bubble_trampoline_title),
+                supporting = stringResource(R.string.bubble_trampoline_description),
+                icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                checked = state.bubbleTrampolineEnabled,
+                enabled = state.bubbleTrampolineCanBeSet,
+                onCheckedChange = onSetBubbleTrampolineEnabled,
             )
+        }
+    }
+    if (state.bubbleTrampolineEnabled) {
+        settingsPageItem(
+            key = "bubble_host_channel",
+            contentType = "action_card",
+            spacingAfter = 8.dp,
+        ) {
+            BubbleHostChannelCard(
+                state = state,
+                onClick = onOpenBubbleHostChannelSettings,
+            )
+        }
+    }
+    settingsPageItem(
+        key = "bubble_defaults",
+        contentType = "grouped_card",
+        spacingAfter = 28.dp,
+    ) {
+        BubbleDefaultsCard(
+            state = state,
+            onSetDefaultPrivateBubblesEnabled = onSetDefaultPrivateBubblesEnabled,
+            onSetDefaultGroupBubblesEnabled = onSetDefaultGroupBubblesEnabled,
+            onOpenConversationSettings = onOpenConversationSettings,
+        )
+    }
+}
 
-            if (state.chatBubblesReady) {
-                if (state.bubbleTrampolineAvailable) {
-                    BubbleSwitchCard(
-                        title = stringResource(R.string.bubble_trampoline_title),
-                        supporting = stringResource(R.string.bubble_trampoline_description),
-                        icon = Icons.AutoMirrored.Rounded.OpenInNew,
-                        checked = state.bubbleTrampolineEnabled,
-                        enabled = state.bubbleTrampolineCanBeSet,
-                        onCheckedChange = onSetBubbleTrampolineEnabled,
-                    )
-                }
-
-                if (state.bubbleTrampolineEnabled) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onOpenBubbleHostChannelSettings,
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(20.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            OptionLeadingIcon(icon = Icons.Rounded.Notifications)
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.bubble_host_channel_optimization_title
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    text = stringResource(
-                                        when {
-                                            state.bubbleHostNotificationMinimized -> {
-                                                R.string.bubble_host_channel_optimized_description
-                                            }
-                                            state.bubbleHostNotificationsDisabled -> {
-                                                R.string.bubble_host_channel_disabled_description
-                                            }
-                                            else -> {
-                                                R.string.bubble_host_channel_optimization_recommendation
-                                            }
-                                        }
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+@Composable
+private fun BubbleHostChannelCard(state: SetupState, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OptionLeadingIcon(icon = Icons.Rounded.Notifications)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.bubble_host_channel_optimization_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(
+                        when {
+                            state.bubbleHostNotificationMinimized -> {
+                                R.string.bubble_host_channel_optimized_description
                             }
-                            Icon(
-                                imageVector = if (state.bubbleHostNotificationMinimized) {
-                                    Icons.Rounded.CheckCircle
-                                } else {
-                                    Icons.Rounded.ChevronRight
-                                },
-                                contentDescription = null,
-                                tint = if (state.bubbleHostNotificationMinimized) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
+                            state.bubbleHostNotificationsDisabled -> {
+                                R.string.bubble_host_channel_disabled_description
+                            }
+                            else -> R.string.bubble_host_channel_optimization_recommendation
                         }
-                    }
-                }
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                ) {
-                    Column {
-                        Column(
-                            modifier = Modifier.padding(
-                                start = 20.dp,
-                                top = 20.dp,
-                                end = 20.dp,
-                                bottom = 12.dp,
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.bubble_defaults_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = stringResource(R.string.bubble_defaults_description),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        BubbleDefaultRow(
-                            title = stringResource(R.string.bubble_default_private_title),
-                            supporting = stringResource(
-                                R.string.bubble_default_private_description
-                            ),
-                            icon = Icons.Rounded.Person,
-                            checked = state.defaultPrivateBubblesEnabled,
-                            onCheckedChange = onSetDefaultPrivateBubblesEnabled,
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                        BubbleDefaultRow(
-                            title = stringResource(R.string.bubble_default_group_title),
-                            supporting = stringResource(
-                                R.string.bubble_default_group_description
-                            ),
-                            icon = Icons.Rounded.Group,
-                            checked = state.defaultGroupBubblesEnabled,
-                            onCheckedChange = onSetDefaultGroupBubblesEnabled,
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                        BubbleConversationSettingsRow(
-                            title = stringResource(R.string.bubble_per_conversation_title),
-                            supporting = stringResource(
-                                R.string.bubble_per_conversation_description
-                            ),
-                            onClick = onOpenConversationSettings,
-                        )
-                    }
-                }
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+            Icon(
+                imageVector = if (state.bubbleHostNotificationMinimized) {
+                    Icons.Rounded.CheckCircle
+                } else {
+                    Icons.Rounded.ChevronRight
+                },
+                contentDescription = null,
+                tint = if (state.bubbleHostNotificationMinimized) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun BubbleSwitchCard(
+private fun BubbleDefaultsCard(
+    state: SetupState,
+    onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
+    onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
+    onOpenConversationSettings: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column {
+            Column(
+                modifier = Modifier.padding(
+                    start = 20.dp,
+                    top = 20.dp,
+                    end = 20.dp,
+                    bottom = 12.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.bubble_defaults_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.bubble_defaults_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            BubbleDefaultRow(
+                title = stringResource(R.string.bubble_default_private_title),
+                supporting = stringResource(R.string.bubble_default_private_description),
+                icon = Icons.Rounded.Person,
+                checked = state.defaultPrivateBubblesEnabled,
+                onCheckedChange = onSetDefaultPrivateBubblesEnabled,
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            BubbleDefaultRow(
+                title = stringResource(R.string.bubble_default_group_title),
+                supporting = stringResource(R.string.bubble_default_group_description),
+                icon = Icons.Rounded.Group,
+                checked = state.defaultGroupBubblesEnabled,
+                onCheckedChange = onSetDefaultGroupBubblesEnabled,
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            BubbleConversationSettingsRow(
+                title = stringResource(R.string.bubble_per_conversation_title),
+                supporting = stringResource(R.string.bubble_per_conversation_description),
+                onClick = onOpenConversationSettings,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSwitchCard(
     title: String,
     supporting: String,
     icon: ImageVector,
@@ -2068,6 +2288,43 @@ private fun ConversationOverrideOption(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DebugSection(
+    state: SetupState,
+    onSetCaptureLoggingEnabled: (Boolean) -> Unit,
+    onSetRewriteNotificationsEnabled: (Boolean) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(
+            title = stringResource(R.string.section_debug),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SettingsSwitchCard(
+                title = stringResource(R.string.debug_capture_logging_title),
+                supporting = stringResource(R.string.debug_capture_logging_description),
+                icon = Icons.Rounded.Timeline,
+                checked = state.debugCaptureLoggingEnabled,
+                enabled = true,
+                onCheckedChange = onSetCaptureLoggingEnabled,
+            )
+            SettingsSwitchCard(
+                title = stringResource(R.string.debug_rewrite_notifications_title),
+                supporting = stringResource(
+                    if (state.rewriteNotificationsEnabled) {
+                        R.string.debug_rewrite_notifications_enabled_description
+                    } else {
+                        R.string.debug_rewrite_notifications_disabled_description
+                    }
+                ),
+                icon = Icons.Rounded.NotificationsActive,
+                checked = state.rewriteNotificationsEnabled,
+                enabled = true,
+                onCheckedChange = onSetRewriteNotificationsEnabled,
+            )
         }
     }
 }

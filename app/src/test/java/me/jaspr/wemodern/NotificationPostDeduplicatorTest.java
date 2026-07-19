@@ -31,4 +31,13 @@ public class NotificationPostDeduplicatorTest {
         assertTrue(deduplicator.shouldProcess(null, 100L, 90L));
         assertTrue(deduplicator.shouldProcess(null, 100L, 90L));
     }
+
+    @Test
+    public void forgottenSnoozedPostCanBeProcessedAgain() {
+        NotificationPostDeduplicator deduplicator = new NotificationPostDeduplicator();
+
+        assertTrue(deduplicator.shouldProcess("wechat-call", 100L, 90L));
+        deduplicator.forget("wechat-call");
+        assertTrue(deduplicator.shouldProcess("wechat-call", 100L, 90L));
+    }
 }

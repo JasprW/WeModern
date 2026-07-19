@@ -75,6 +75,31 @@ The debug APK is written to:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## WeChat notification debugging
+
+The app has two independent controls under **Debug**. **Capture and logging**
+records every intercepted active-scan, posted, and removed WeChat notification
+under the `WeModern.Capture` logcat tag and in an app-private JSONL file.
+**Rewrite notifications** separately controls parsing, hiding, replacing,
+bubbles, and Live Update promotion. The current development defaults enable
+capture and logging while leaving rewriting disabled, so WeChat notifications
+remain unchanged while evidence is collected.
+
+Changes take effect immediately without rebuilding or reconnecting notification
+access. Monitor and export captured events with:
+
+```bash
+adb logcat -v threadtime -s WeModern.Capture
+adb exec-out run-as me.jaspr.wemodern cat files/wechat_notification_capture.jsonl > wechat_notification_capture.jsonl
+```
+
+The current file rotates at 16 MiB to
+`files/wechat_notification_capture.previous.jsonl`. Turning off **Capture and
+logging** stops both new JSONL records and `WeModern.Capture` output. Turning on
+**Rewrite notifications** enables the current message, bubble, and
+evidence-driven voice/video call rewrite behavior while capture can remain
+either on or off.
+
 ## Release
 
 Push a tag named `v*` to build the debug APK and publish it as a GitHub Release:

@@ -5,6 +5,15 @@ local.properties
 outputs/
 work/
 
+# Android Studio / IntelliJ workspace state
+.idea/
+*.iml
+
+# Android build intermediates and local profiling captures
+.externalNativeBuild/
+.cxx/
+*.hprof
+
 *.apk
 *.ap_
 *.aab

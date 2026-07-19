@@ -15,6 +15,8 @@ public final class WeChatLaunchProxyActivity extends Activity {
             "me.jaspr.wemodern.action.OPEN_WECHAT_NOTIFICATION";
     private static final String EXTRA_TARGET =
             "me.jaspr.wemodern.extra.WECHAT_CONTENT_INTENT";
+    private static final String EXTRA_LAUNCH_KEY =
+            "me.jaspr.wemodern.extra.WECHAT_LAUNCH_KEY";
     private static final int REQUEST_CODE_NAMESPACE = 0x45000000;
 
     @Override
@@ -25,6 +27,10 @@ public final class WeChatLaunchProxyActivity extends Activity {
             Log.w(TAG, "notification launch proxy missing WeChat target");
             finish();
             return;
+        }
+
+        if (isIncomingCallLaunchKey(getIntent().getStringExtra(EXTRA_LAUNCH_KEY))) {
+            WeChatNotificationService.cancelCallNotification(this);
         }
 
         BubbleLaunchCleanup.clear(this);
@@ -38,6 +44,7 @@ public final class WeChatLaunchProxyActivity extends Activity {
         if (target == null) return null;
         Intent proxy = new Intent(context, WeChatLaunchProxyActivity.class)
                 .setAction(ACTION_OPEN_WECHAT)
+                .putExtra(EXTRA_LAUNCH_KEY, launchKey)
                 .putExtra(EXTRA_TARGET, target);
         return PendingIntent.getActivity(
                 context,
@@ -50,6 +57,10 @@ public final class WeChatLaunchProxyActivity extends Activity {
     static int requestCodeFor(String launchKey) {
         int hash = launchKey == null ? 0 : launchKey.hashCode();
         return REQUEST_CODE_NAMESPACE ^ hash;
+    }
+
+    static boolean isIncomingCallLaunchKey(String launchKey) {
+        return launchKey != null && launchKey.startsWith("call:incoming:");
     }
 
     static int pendingIntentFlags() {

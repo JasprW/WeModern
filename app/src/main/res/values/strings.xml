@@ -11,6 +11,12 @@
     <string name="section_setup">Setup</string>
     <string name="section_bubbles">Bubbles</string>
     <string name="section_advanced">Advanced</string>
+    <string name="section_debug">Debug</string>
+    <string name="debug_capture_logging_title">Capture and logging</string>
+    <string name="debug_capture_logging_description">Record intercepted WeChat notification events to logcat and JSONL</string>
+    <string name="debug_rewrite_notifications_title">Rewrite notifications</string>
+    <string name="debug_rewrite_notifications_enabled_description">Parse, hide, and replace recognized WeChat notifications</string>
+    <string name="debug_rewrite_notifications_disabled_description">Leave WeChat notifications unchanged</string>
     <string name="app_icon_open_wechat_title">Open WeChat from icon</string>
     <string name="app_icon_open_wechat_description">Open WeChat when you tap the WeModern app icon</string>
     <string name="app_icon_open_wechat_locked_description">Finish required notification setup to enable</string>
@@ -76,13 +82,19 @@
     <string name="setup_state_running">Running status</string>
     <string name="setup_state_required">Required setup</string>
     <string name="setup_ready_title">All set</string>
+    <string name="setup_debug_only_title">Debug only</string>
+    <string name="setup_off_title">Off</string>
     <string name="setup_ready_message">WeChat notification rewriting is running</string>
+    <string name="setup_ready_capture_message">Capturing raw WeChat notifications; rewriting is off</string>
+    <string name="setup_ready_passthrough_message">WeChat notifications are unchanged; capture and rewriting are off</string>
     <plurals name="setup_remaining_steps">
         <item quantity="one">%1$d step remaining</item>
         <item quantity="other">%1$d steps remaining</item>
     </plurals>
     <string name="setup_remaining_message">Finish setup to rewrite WeChat messages and call notifications</string>
     <string name="capability_notification_rewrite">Notification rewrite</string>
+    <string name="capability_capture_logging">Capture and logging</string>
+    <string name="capability_passthrough">Passthrough</string>
     <string name="setup_notification_access_title">Notification access</string>
     <string name="setup_notification_access_description">Read and rewrite WeChat notifications</string>
     <string name="setup_post_notifications_title">Send notifications</string>
@@ -158,6 +170,10 @@
     <string name="test_video_call_text">Video call in progress</string>
     <string name="wechat_call_title">WeChat call</string>
     <string name="wechat_call_in_progress">Call in progress</string>
+    <string name="wechat_incoming_voice_call">Incoming voice call</string>
+    <string name="wechat_incoming_video_call">Incoming video call</string>
+    <string name="call_action_answer">Answer</string>
+    <string name="call_action_decline">Decline</string>
     <string name="channel_wechat_messages">WeChat messages</string>
     <string name="channel_wechat_messages_description">Rewritten WeChat message notifications</string>
     <string name="channel_wechat_bubble_mode_conversations">Per-conversation notifications</string>
