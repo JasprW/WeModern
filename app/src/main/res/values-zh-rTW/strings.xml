@@ -35,13 +35,13 @@
     <string name="bubble_open_conversation">開啟對話</string>
     <string name="bubble_open_wechat_home">在泡泡內開啟微信</string>
     <string name="bubble_no_messages">沒有最近訊息</string>
-    <string name="bubble_trampoline_title">泡泡跳板（實驗功能）</string>
-    <string name="bubble_trampoline_description">只保留最新對話的一個泡泡，並在其中直接開啟微信首頁</string>
+    <string name="bubble_trampoline_title">泡泡跳板</string>
+    <string name="bubble_trampoline_description">在泡泡內開啟微信；通知列中仍可能出現一則重複通知</string>
     <string name="bubble_trampoline_locked_description">完成必要的通知設定後可開啟</string>
     <string name="bubble_trampoline_bubbles_required_description">開啟聊天泡泡後可設定</string>
     <string name="bubble_trampoline_system_required_description">請先在 Android 設定中允許泡泡</string>
     <string name="bubble_host_channel_optimization_title">減少重複的通知圖示</string>
-    <string name="bubble_host_channel_optimization_recommendation">開啟「微信泡泡宿主通知」，選擇「靜音」並開啟「最小化」。請保持「顯示通知」開啟，以便泡泡正常啟動及更新。</string>
+    <string name="bubble_host_channel_optimization_recommendation">弱化泡泡宿主通知的存在感，減少干擾並優化體驗</string>
     <string name="bubble_host_channel_optimized_description">泡泡宿主通知已設為「靜音」並「最小化」</string>
     <string name="bubble_host_channel_disabled_description">泡泡宿主通知已關閉；請重新開啟，以便泡泡正常啟動及更新。</string>
     <string name="bubble_defaults_title">對話設定</string>
@@ -97,8 +97,6 @@
     <string name="setup_notification_access_description">讀取並重寫微信通知</string>
     <string name="setup_post_notifications_title">傳送通知</string>
     <string name="setup_post_notifications_description">顯示重寫後的訊息與來電</string>
-    <string name="setup_full_screen_intent_title">來電持續彈出</string>
-    <string name="setup_full_screen_intent_description">在開啟微信前持續顯示 CallStyle</string>
     <string name="setup_live_update_description">在狀態列和鎖定畫面顯示即時通話進度</string>
     <string name="setup_battery_title">不受限電池使用</string>
     <string name="setup_battery_description">提升背景執行可靠性</string>
@@ -116,8 +114,6 @@
     <string name="action_expand">展開詳細資料</string>
     <string name="action_collapse">收合詳細資料</string>
     <string name="action_copy_commands">複製指令</string>
-    <string name="tests_support_ready">選擇一種類型</string>
-    <string name="tests_support_locked">請先完成必要設定</string>
     <string name="test_short_message">訊息</string>
     <string name="test_short_voice">語音</string>
     <string name="test_short_video">視訊</string>

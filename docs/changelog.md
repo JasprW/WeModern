@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-- 优化通话阶段切换：首个微信 `id=40/0x62` 仍只登记候选，但候选期间新增由微信会话门控的 `AudioManager` 模式检测；`MODE_IN_COMMUNICATION` / `MODE_IN_CALL` 可立即升级 Live Update，保留后续通知更新与 10 秒兜底，避免旧逻辑在实际接通后仍等待数秒。Pixel 9 Pro / API 37 语音真机复测确认原接通延迟已解决。Android 14+ 设置页同时新增“来电持续弹出”特殊访问状态和系统授权入口，CallStyle 发布日志记录实际 full-screen intent 可用性。
+## 1.7.0 — 2026-07-19
+
+- 新增根目录 `DESIGN.md` 与机器可读的 `DESIGN.json`，以 Material You 动态颜色和 Material 3 Expressive 的灵动、活泼设计语言统一后续界面设计。
+- 优化 Bubbles 与 Tests 设置体验：Android 气泡设置和 Chat bubbles 开关统一使用 Material Symbol `bubble`，移除 Tests 标题尾部提示与 Bubble trampoline 的 Experimental 标记，并明确 trampoline 可能带来通知栏重复通知、host channel 优化用于弱化其存在感。关闭 Chat bubbles 时不再清空 trampoline 偏好，重新开启后自动恢复；依赖选项使用无回弹的原生展开/淡入动画，会话排序使用稳定 key 的原生位置动画。
+- 锁屏来电统一为 CallStyle 通知，不再直接启动微信：删除 `USE_FULL_SCREEN_INTENT` 权限声明、“来电持续弹出”设置入口和授权状态；API 37 改由最长约三分钟的 `shortService` foreground type 承载不含 FSI 的纯 CallStyle，来电结束、用户点击或接通时立即退出前台状态，API 26–36 继续使用普通 CallStyle。Pixel 9 Pro / API 37 已确认关闭全屏特殊访问时锁屏显示带操作按钮的 CallStyle。
+- 优化通话阶段切换：首个微信 `id=40/0x62` 仍只登记候选，但候选期间新增由微信会话门控的 `AudioManager` 模式检测；`MODE_IN_COMMUNICATION` / `MODE_IN_CALL` 可立即升级 Live Update，保留后续通知更新与 10 秒兜底，避免旧逻辑在实际接通后仍等待数秒。Pixel 9 Pro / API 37 语音真机复测确认原接通延迟已解决。
 - 先撤回 `v1.6.1` 之后所有缺少完整证据的微信语音/视频通话识别、通知合并、snooze、头像和分阶段 Live Update 实验，并恢复发布基线；后续新状态机仅依据 capture-only 完整样本重新实现。
 - 新增应用内 Debug 开关：“采集与日志”总开关控制微信通知 posted/removed/active-scan 的 `WeModern.Capture` 与 JSONL 记录，“改写通知”开关独立控制解析、取消或 snooze、替换、Live Update 与气泡 host；切换即时生效，开发阶段默认只采集、不改写。
 - 补充完整通话实验记录，保留双重/丢失/残留通知、错误 Live Update promotion 与计时、头像通知、VoIP Activity、`id=40` / `id=41`、snooze 和回滚等全部尝试及失败结论，防止未发布探索被误当成当前能力。
@@ -15,7 +20,7 @@
 - 主状态卡新增明确的“关闭 / Debug only / All set”运行标识，分别使用电源、调试和勾选图标及不同色调，避免只采集模式仍显示 All set；关闭态采用高对比度深色中性图标底板，避免与卡片背景融为一体。
 - 基于 capture-only JSONL 重新实现待验证的微信语音来电状态机：`id=41` 使用标准 CallStyle，Answer/Decline 都打开微信原 PendingIntent；`id=40/0x02` 不再误入消息或提前计时，只有 `0x02 → 0x62` 才以单一固定 ID 创建计时 Live Update。联系人头像复用已有会话缓存，接通源通知采用 30 分钟短 snooze，并保留旧固定 channel 兼容路径。
 - 修复来电 `id=41` 未被改写：activity 日志维护的微信前台状态可能滞后，旧逻辑因此跳过 CallStyle 发布并保留原通知；现在以命中的来电通知为权威信号，成功发布后立即隐藏 `id=41`，进入微信时再移除替换卡片。Answer/Decline 改用身份独立但都转发同一微信目标的 PendingIntent，避免系统合并 action。
-- 再次修复 API 37 上来电与快速重拨均无替换：系统会拒绝既非 FGS/UIJ、又没有 `fullScreenIntent` 的 CallStyle，现已声明对应权限并让替换复用微信目标作为 full-screen intent；真机探针确认系统接受标准 CallStyle。连接态不再将复用 key 的微信 `id=40` snooze 30 分钟，避免后续通话的 `0x02/0x62` 被系统直接丢弃而无法创建 Live Update。
+- 再次修复 API 37 上来电与快速重拨均无替换：系统会拒绝既非 FGS/UIJ、又没有 `fullScreenIntent` 字段的 CallStyle；早期真机探针通过 FSI 验证标准 CallStyle 可发布，最终实现改用临时 `shortService` FGS 满足同一平台条件，不声明全屏通知权限，也不在通知中携带 FSI。连接态不再将复用 key 的微信 `id=40` snooze 30 分钟，避免后续通话的 `0x02/0x62` 被系统直接丢弃而无法创建 Live Update。
 - 修复 CallStyle 出现后微信 `id=41` 仍并列显示，以及进入微信接听页即过早启动 Live Update：ongoing `id=41` 改用 2 秒可续短 snooze 隐藏，避免普通 listener cancel 被系统忽略又不长期压住下一通来电；首个 `id=40/0x62` 改为连接候选，等待至少 1 秒后的新 `0x62` 更新再计时，并提供 10 秒无更新兜底。
 - 修复微信 `id=40` 在来电与 Live Update 阶段始终并列显示：待接听的普通 `0x02` 状态尝试 listener cancel，Live Update 成功后对系统保护的 `0x62` 前台服务通知使用 2 秒滚动 snooze；隐藏标记会自动过期，避免吞掉后续真实 APP_CANCEL。保留当前约 5 秒的安全接通延迟，并记录为待优化项。
 - 记录 Pixel 9 Pro / API 37 的语音通话可用基线：微信 `id=41` 动态来电 channel 与 `id=40` 的 `reminder_channel_id` 都保持开启并手动设为 Silent + Minimize，再由 WeModern 提供 CallStyle 和 Live Update；明确动态 channel 重建、`reminder_channel_id` 可能影响其他提醒、约 5 秒 promotion 延迟以及视频通话待专项优化等边界。

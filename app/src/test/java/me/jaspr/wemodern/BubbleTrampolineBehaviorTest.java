@@ -7,6 +7,13 @@ import org.junit.Test;
 
 public class BubbleTrampolineBehaviorTest {
     @Test
+    public void enabledPreferenceDependsOnPlatformSupportNotCurrentBubbleReadiness() {
+        assertTrue(BubbleTrampolineBehavior.shouldStoreEnabledPreference(true, true));
+        assertFalse(BubbleTrampolineBehavior.shouldStoreEnabledPreference(true, false));
+        assertFalse(BubbleTrampolineBehavior.shouldStoreEnabledPreference(false, true));
+    }
+
+    @Test
     public void enabledTestMessageOpensWeChatHome() {
         assertTrue(BubbleTrampolineBehavior.shouldOpenWeChatHome(
                 MessageTestNotifications.SHORTCUT_ID,

@@ -22,31 +22,25 @@ final class BubbleTrampolineBehavior {
                 PREFERENCES,
                 Context.MODE_PRIVATE
         );
-        boolean enabled = preferences.getBoolean(
+        return preferences.getBoolean(
                 OPEN_WECHAT_IN_BUBBLE,
                 preferences.getBoolean(LEGACY_TEST_MESSAGE_OPENS_WECHAT, false)
         );
-        if (enabled && !ChatBubbleBehavior.isReady(
-                ChatBubbleBehavior.isEnabled(context),
-                ChatBubbleBehavior.isSystemAllowed(context)
-        )) {
-            setEnabled(context, false);
-            return false;
-        }
-        return enabled;
     }
 
     static void setEnabled(Context context, boolean enabled) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
-                .putBoolean(OPEN_WECHAT_IN_BUBBLE,
-                        enabled
-                                && isSupported(Build.VERSION.SDK_INT)
-                                && ChatBubbleBehavior.isReady(
-                                        ChatBubbleBehavior.isEnabled(context),
-                                        ChatBubbleBehavior.isSystemAllowed(context)))
+                .putBoolean(
+                        OPEN_WECHAT_IN_BUBBLE,
+                        shouldStoreEnabledPreference(enabled, isSupported(Build.VERSION.SDK_INT))
+                )
                 .remove(LEGACY_TEST_MESSAGE_OPENS_WECHAT)
                 .apply();
+    }
+
+    static boolean shouldStoreEnabledPreference(boolean enabled, boolean supported) {
+        return enabled && supported;
     }
 
     static boolean shouldOpenWeChatHome(String conversationId, boolean enabled) {

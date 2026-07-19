@@ -35,13 +35,13 @@
     <string name="bubble_open_conversation">打开会话</string>
     <string name="bubble_open_wechat_home">在气泡内打开微信</string>
     <string name="bubble_no_messages">暂无最近消息</string>
-    <string name="bubble_trampoline_title">气泡跳板（实验功能）</string>
-    <string name="bubble_trampoline_description">只保留最新会话的一个气泡，并在其中直接打开微信主页</string>
+    <string name="bubble_trampoline_title">气泡跳板</string>
+    <string name="bubble_trampoline_description">在气泡内打开微信；通知栏中仍可能出现一条重复通知</string>
     <string name="bubble_trampoline_locked_description">完成必要的通知设置后可开启</string>
     <string name="bubble_trampoline_bubbles_required_description">开启聊天气泡后可设置</string>
     <string name="bubble_trampoline_system_required_description">请先在 Android 设置中允许气泡</string>
     <string name="bubble_host_channel_optimization_title">减少重复的通知图标</string>
-    <string name="bubble_host_channel_optimization_recommendation">打开“微信气泡宿主通知”，选择“静音”并开启“最小化”。请保持“显示通知”开启，以便气泡正常启动和更新。</string>
+    <string name="bubble_host_channel_optimization_recommendation">弱化气泡宿主通知的存在感，减少干扰并优化体验</string>
     <string name="bubble_host_channel_optimized_description">气泡宿主通知已设为“静音”并“最小化”</string>
     <string name="bubble_host_channel_disabled_description">气泡宿主通知已关闭；请重新开启，以便气泡正常启动和更新。</string>
     <string name="bubble_defaults_title">会话设置</string>
@@ -97,8 +97,6 @@
     <string name="setup_notification_access_description">读取并重写微信通知</string>
     <string name="setup_post_notifications_title">发送通知</string>
     <string name="setup_post_notifications_description">展示重写后的消息与来电</string>
-    <string name="setup_full_screen_intent_title">来电持续弹出</string>
-    <string name="setup_full_screen_intent_description">在打开微信前持续显示 CallStyle</string>
     <string name="setup_live_update_description">在状态栏和锁屏显示实时通话进度</string>
     <string name="setup_battery_title">不受限电池使用</string>
     <string name="setup_battery_description">提升后台运行可靠性</string>
@@ -116,8 +114,6 @@
     <string name="action_expand">展开详情</string>
     <string name="action_collapse">收起详情</string>
     <string name="action_copy_commands">复制命令</string>
-    <string name="tests_support_ready">选择一种类型</string>
-    <string name="tests_support_locked">请先完成必要设置</string>
     <string name="test_short_message">消息</string>
     <string name="test_short_voice">语音</string>
     <string name="test_short_video">视频</string>

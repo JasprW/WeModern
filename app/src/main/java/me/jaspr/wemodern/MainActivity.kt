@@ -23,8 +23,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -52,6 +54,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -65,7 +68,6 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -118,12 +120,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -179,7 +184,6 @@ class MainActivity : ComponentActivity() {
                     onOpenBubbleHostChannelSettings = {
                         openBubbleHostChannelSettings()
                     },
-                    onOpenFullScreenIntentSettings = { openFullScreenIntentSettings() },
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
                     onOpenAppSettings = { openAppSettings() },
@@ -193,9 +197,6 @@ class MainActivity : ComponentActivity() {
                             setupState.chatBubblesSystemAllowed,
                         )
                         ChatBubbleBehavior.setEnabled(this, enabled && canEnable)
-                        if (!enabled || !canEnable) {
-                            BubbleTrampolineBehavior.setEnabled(this, false)
-                        }
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
                         if (enabled && !setupState.chatBubblesSystemAllowed) {
@@ -300,15 +301,6 @@ class MainActivity : ComponentActivity() {
         ) {
             AppIconBehavior.setOpenWeChatEnabled(this, false)
         }
-        if (!ChatBubbleBehavior.canUseTrampoline(
-                coreReady,
-                chatBubblesEnabled,
-                chatBubblesSystemAllowed,
-            ) && BubbleTrampolineBehavior.isEnabled(this)
-        ) {
-            BubbleTrampolineBehavior.setEnabled(this, false)
-            bubbleSettingsChanged = true
-        }
         if (bubbleSettingsChanged) {
             ConversationBubbles.syncActiveNotifications(this)
         }
@@ -329,7 +321,6 @@ class MainActivity : ComponentActivity() {
                 ConversationBubblePreferences.isDefaultGroupEnabled(this),
             conversationSortOrder = ConversationBubblePreferences.getSortOrder(this),
             conversations = ConversationBubblePreferences.getConversations(this),
-            fullScreenIntentAllowed = canUseFullScreenIntent(),
             promotedNotificationsAllowed = canPostPromotedNotifications(),
             batteryOptimizationIgnored = isBatteryOptimizationIgnored(),
             readLogsGranted = hasReadLogsPermission(),
@@ -353,11 +344,6 @@ class MainActivity : ComponentActivity() {
 
     private fun canPostPromotedNotifications(): Boolean {
         return Build.VERSION.SDK_INT >= 36 && getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
-    }
-
-    private fun canUseFullScreenIntent(): Boolean {
-        return Build.VERSION.SDK_INT < 34 ||
-                getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
     }
 
     private fun isBatteryOptimizationIgnored(): Boolean {
@@ -429,19 +415,6 @@ class MainActivity : ComponentActivity() {
             }.onFailure {
                 openAppSettings()
             }
-        }
-    }
-
-    private fun openFullScreenIntentSettings() {
-        if (Build.VERSION.SDK_INT < 34) return
-        runCatching {
-            startActivity(
-                Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-            )
-        }.onFailure {
-            openAppSettings()
         }
     }
 
@@ -675,7 +648,6 @@ private data class SetupState(
     val conversationSortOrder: ConversationBubblePreferences.SortOrder =
         ConversationBubblePreferences.SortOrder.RECENT,
     val conversations: List<ConversationBubblePreferences.Entry> = emptyList(),
-    val fullScreenIntentAllowed: Boolean = Build.VERSION.SDK_INT < 34,
     val promotedNotificationsAllowed: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val readLogsGranted: Boolean = false,
@@ -700,9 +672,6 @@ private data class SetupState(
 
     val liveUpdatesAvailable: Boolean
         get() = Build.VERSION.SDK_INT >= 36
-
-    val fullScreenIntentSettingAvailable: Boolean
-        get() = Build.VERSION.SDK_INT >= 34
 
     val chatBubblesAvailable: Boolean
         get() = ChatBubbleBehavior.isSupported(Build.VERSION.SDK_INT)
@@ -766,7 +735,6 @@ private fun WeModernApp(
     onRequestNotifications: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
     onOpenBubbleHostChannelSettings: () -> Unit,
-    onOpenFullScreenIntentSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -868,7 +836,6 @@ private fun WeModernApp(
                     onOpenListenerSettings = onOpenListenerSettings,
                     onRequestNotifications = onRequestNotifications,
                     onOpenChatBubbleSettings = onOpenChatBubbleSettings,
-                    onOpenFullScreenIntentSettings = onOpenFullScreenIntentSettings,
                     onOpenPromotedNotificationSettings = onOpenPromotedNotificationSettings,
                     onRequestIgnoreBatteryOptimization = onRequestIgnoreBatteryOptimization,
                 )
@@ -1046,6 +1013,38 @@ private fun LazyListScope.settingsPageItem(
 ) {
     item(key = key, contentType = contentType) {
         SettingsPageItem(spacingAfter = spacingAfter, content = content)
+    }
+}
+
+private fun LazyListScope.animatedSettingsPageItem(
+    key: String,
+    contentType: String,
+    visible: Boolean,
+    spacingAfter: Dp,
+    content: @Composable () -> Unit,
+) {
+    item(key = key, contentType = contentType) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(animationSpec = tween(durationMillis = 180)) +
+                    expandVertically(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                        expandFrom = Alignment.Top,
+                    ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 120)) +
+                    shrinkVertically(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMedium,
+                        ),
+                        shrinkTowards = Alignment.Top,
+                    ),
+        ) {
+            SettingsPageItem(spacingAfter = spacingAfter, content = content)
+        }
     }
 }
 
@@ -1253,7 +1252,6 @@ private fun LazyListScope.settingsSectionItems(
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
-    onOpenFullScreenIntentSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
 ) {
@@ -1330,38 +1328,6 @@ private fun LazyListScope.settingsSectionItems(
             onClick = if (state.postNotificationsGranted) null else onRequestNotifications,
         )
     }
-    if (state.fullScreenIntentSettingAvailable) {
-        settingsPageItem(
-            key = "setup_full_screen_intent",
-            contentType = "setting_row",
-            spacingAfter = 4.dp,
-        ) {
-            SettingRow(
-                title = stringResource(R.string.setup_full_screen_intent_title),
-                supporting = stringResource(R.string.setup_full_screen_intent_description),
-                icon = Icons.Rounded.PhoneInTalk,
-                status = stringResource(
-                    if (state.fullScreenIntentAllowed) {
-                        R.string.setup_status_enabled
-                    } else {
-                        R.string.setup_status_recommended
-                    }
-                ),
-                statusTone = if (state.fullScreenIntentAllowed) {
-                    SetupStatusTone.Success
-                } else {
-                    SetupStatusTone.Attention
-                },
-                highlighted = false,
-                shape = middleShape,
-                onClick = if (state.fullScreenIntentAllowed) {
-                    null
-                } else {
-                    onOpenFullScreenIntentSettings
-                },
-            )
-        }
-    }
     if (state.chatBubblesAvailable) {
         settingsPageItem(
             key = "setup_bubble_permission",
@@ -1377,7 +1343,7 @@ private fun LazyListScope.settingsSectionItems(
                         R.string.chat_bubbles_system_required_description
                     }
                 ),
-                icon = Icons.Rounded.ChatBubble,
+                iconPainter = painterResource(R.drawable.ic_material_symbol_bubble_24),
                 status = stringResource(
                     if (state.chatBubblesSystemAllowed) {
                         R.string.setup_status_enabled
@@ -1469,12 +1435,13 @@ private fun LazyListScope.settingsSectionItems(
 private fun SettingRow(
     title: String,
     supporting: String,
-    icon: ImageVector,
+    icon: ImageVector? = null,
     status: String,
     statusTone: SetupStatusTone,
     highlighted: Boolean,
     shape: Shape,
     onClick: (() -> Unit)?,
+    iconPainter: Painter? = null,
 ) {
     val containerColor = if (highlighted) {
         MaterialTheme.colorScheme.secondaryContainer
@@ -1490,7 +1457,7 @@ private fun SettingRow(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OptionLeadingIcon(icon = icon)
+            OptionLeadingIcon(icon = icon, painter = iconPainter)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -1615,35 +1582,41 @@ private fun LazyListScope.bubbleSectionItems(
             title = stringResource(R.string.section_bubbles),
         )
     }
-    settingsPageItem(
-        key = "bubbles_enabled",
-        contentType = "switch_card",
-        spacingAfter = if (state.chatBubblesReady) 8.dp else 28.dp,
-    ) {
-        SettingsSwitchCard(
-            title = stringResource(R.string.chat_bubbles_enable_title),
-            supporting = stringResource(
-                when {
-                    !state.coreReady -> R.string.chat_bubbles_locked_description
-                    !state.chatBubblesSystemAllowed -> {
-                        R.string.chat_bubbles_system_enable_required_description
-                    }
-                    state.chatBubblesEnabled -> R.string.chat_bubbles_enabled_description
-                    else -> R.string.chat_bubbles_disabled_description
-                }
+    item(key = "bubbles_enabled", contentType = "switch_card") {
+        val spacingAfter by animateDpAsState(
+            targetValue = if (state.chatBubblesReady) 8.dp else 28.dp,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMedium,
             ),
-            icon = Icons.Rounded.ChatBubble,
-            checked = state.chatBubblesEnabled,
-            enabled = state.chatBubblesCanBeEnabled || state.chatBubblesEnabled,
-            onCheckedChange = onSetChatBubblesEnabled,
+            label = "Bubble switch spacing",
         )
+        SettingsPageItem(spacingAfter = spacingAfter) {
+            SettingsSwitchCard(
+                title = stringResource(R.string.chat_bubbles_enable_title),
+                supporting = stringResource(
+                    when {
+                        !state.coreReady -> R.string.chat_bubbles_locked_description
+                        !state.chatBubblesSystemAllowed -> {
+                            R.string.chat_bubbles_system_enable_required_description
+                        }
+                        state.chatBubblesEnabled -> R.string.chat_bubbles_enabled_description
+                        else -> R.string.chat_bubbles_disabled_description
+                    }
+                ),
+                iconPainter = painterResource(R.drawable.ic_material_symbol_bubble_24),
+                checked = state.chatBubblesEnabled,
+                enabled = state.chatBubblesCanBeEnabled || state.chatBubblesEnabled,
+                onCheckedChange = onSetChatBubblesEnabled,
+            )
+        }
     }
-    if (!state.chatBubblesReady) return
 
     if (state.bubbleTrampolineAvailable) {
-        settingsPageItem(
+        animatedSettingsPageItem(
             key = "bubble_trampoline",
             contentType = "switch_card",
+            visible = state.chatBubblesReady,
             spacingAfter = 8.dp,
         ) {
             SettingsSwitchCard(
@@ -1656,10 +1629,11 @@ private fun LazyListScope.bubbleSectionItems(
             )
         }
     }
-    if (state.bubbleTrampolineEnabled) {
-        settingsPageItem(
+    if (state.bubbleTrampolineAvailable) {
+        animatedSettingsPageItem(
             key = "bubble_host_channel",
             contentType = "action_card",
+            visible = state.chatBubblesReady && state.bubbleTrampolineEnabled,
             spacingAfter = 8.dp,
         ) {
             BubbleHostChannelCard(
@@ -1668,9 +1642,10 @@ private fun LazyListScope.bubbleSectionItems(
             )
         }
     }
-    settingsPageItem(
+    animatedSettingsPageItem(
         key = "bubble_defaults",
         contentType = "grouped_card",
+        visible = state.chatBubblesReady,
         spacingAfter = 28.dp,
     ) {
         BubbleDefaultsCard(
@@ -1806,10 +1781,11 @@ private fun BubbleDefaultsCard(
 private fun SettingsSwitchCard(
     title: String,
     supporting: String,
-    icon: ImageVector,
+    icon: ImageVector? = null,
     checked: Boolean,
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    iconPainter: Painter? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1830,7 +1806,7 @@ private fun SettingsSwitchCard(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OptionLeadingIcon(icon = icon)
+            OptionLeadingIcon(icon = icon, painter = iconPainter)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -1852,7 +1828,10 @@ private fun SettingsSwitchCard(
 }
 
 @Composable
-private fun OptionLeadingIcon(icon: ImageVector) {
+private fun OptionLeadingIcon(
+    icon: ImageVector? = null,
+    painter: Painter? = null,
+) {
     Surface(
         modifier = Modifier.size(48.dp),
         shape = RoundedCornerShape(17.dp),
@@ -1860,11 +1839,18 @@ private fun OptionLeadingIcon(icon: ImageVector) {
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
+            when {
+                painter != null -> Icon(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+                icon != null -> Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 }
@@ -1966,40 +1952,48 @@ private fun ConversationSettingsSheet(
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.Top,
     ) {
-        item {
-            Text(
-                text = stringResource(R.string.bubble_per_conversation_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        item {
-            Text(
-                text = stringResource(R.string.bubble_per_conversation_sheet_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        item {
-            BubbleIdentityWarning()
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item(key = "conversation_settings_title", contentType = "sheet_header") {
+            SettingsPageItem(spacingAfter = 12.dp) {
                 Text(
-                    text = stringResource(R.string.bubble_known_conversations_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                BubbleSortButtonGroup(
-                    selected = state.conversationSortOrder,
-                    onSelected = onSetConversationSortOrder,
+                    text = stringResource(R.string.bubble_per_conversation_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
+        item(key = "conversation_settings_description", contentType = "sheet_description") {
+            SettingsPageItem(spacingAfter = 12.dp) {
+                Text(
+                    text = stringResource(R.string.bubble_per_conversation_sheet_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item(key = "conversation_settings_warning", contentType = "warning") {
+            SettingsPageItem(spacingAfter = 12.dp) {
+                BubbleIdentityWarning()
+            }
+        }
+        item(key = "conversation_settings_sort", contentType = "sort_controls") {
+            SettingsPageItem(spacingAfter = 12.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = stringResource(R.string.bubble_known_conversations_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    BubbleSortButtonGroup(
+                        selected = state.conversationSortOrder,
+                        onSelected = onSetConversationSortOrder,
+                    )
+                }
+            }
+        }
         if (state.conversations.isEmpty()) {
-            item {
+            item(key = "conversation_settings_empty", contentType = "empty_state") {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -2014,32 +2008,55 @@ private fun ConversationSettingsSheet(
                 }
             }
         } else {
-            item {
+            itemsIndexed(
+                items = state.conversations,
+                key = { _, conversation -> conversation.id },
+                contentType = { _, _ -> "conversation" },
+            ) { index, conversation ->
+                val shape = when {
+                    state.conversations.size == 1 -> RoundedCornerShape(20.dp)
+                    index == 0 -> RoundedCornerShape(
+                        topStart = 20.dp,
+                        topEnd = 20.dp,
+                    )
+                    index == state.conversations.lastIndex -> RoundedCornerShape(
+                        bottomStart = 20.dp,
+                        bottomEnd = 20.dp,
+                    )
+                    else -> RectangleShape
+                }
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(
+                            fadeInSpec = tween(durationMillis = 180),
+                            placementSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            ),
+                            fadeOutSpec = tween(durationMillis = 120),
+                        ),
+                    shape = shape,
                     color = MaterialTheme.colorScheme.surfaceContainer,
                 ) {
                     Column {
-                        state.conversations.forEachIndexed { index, conversation ->
-                            if (index > 0) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                )
-                            }
-                            ConversationBubbleRow(
-                                conversation = conversation,
-                                showNotificationCount = state.conversationSortOrder ==
-                                    ConversationBubblePreferences.SortOrder.COUNT,
-                                defaultEnabled = if (conversation.isGroupConversation) {
-                                    state.defaultGroupBubblesEnabled
-                                } else {
-                                    state.defaultPrivateBubblesEnabled
-                                },
-                                onClick = { onSelectConversation(conversation.id) },
+                        if (index > 0) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
                             )
                         }
+                        ConversationBubbleRow(
+                            conversation = conversation,
+                            showNotificationCount = state.conversationSortOrder ==
+                                ConversationBubblePreferences.SortOrder.COUNT,
+                            defaultEnabled = if (conversation.isGroupConversation) {
+                                state.defaultGroupBubblesEnabled
+                            } else {
+                                state.defaultPrivateBubblesEnabled
+                            },
+                            onClick = { onSelectConversation(conversation.id) },
+                        )
                     }
                 }
             }
@@ -2623,12 +2640,7 @@ private fun TestsSection(
     val anyPressed = messagePressed || voicePressed || videoPressed
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionHeader(
-            title = stringResource(R.string.section_tests),
-            supporting = stringResource(
-                if (enabled) R.string.tests_support_ready else R.string.tests_support_locked
-            ),
-        )
+        SectionHeader(title = stringResource(R.string.section_tests))
         Row(
             modifier = Modifier
                 .fillMaxWidth()

@@ -6,6 +6,7 @@ import android.app.PendingIntent;
 import android.app.Person;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Icon;
 import android.media.AudioManager;
@@ -49,6 +50,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final int REASON_SNOOZED = 18;
     private static final NotificationPostDeduplicator POST_DEDUPLICATOR =
             new NotificationPostDeduplicator();
+    private static volatile WeChatNotificationService activeInstance;
     private final Map<String, ArrayDeque<Message>> histories = new HashMap<>();
     private final Map<String, String> originalToConversation = new HashMap<>();
     private final Map<CancelEventKey, ReplacementRecord> replacementsByCancelEvent = new HashMap<>();
@@ -74,10 +76,12 @@ public class WeChatNotificationService extends NotificationListenerService {
     private int lastObservedCallAudioMode = Integer.MIN_VALUE;
     private boolean listenerConnected;
     private boolean rewriteEnabled;
+    private boolean incomingCallForeground;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        activeInstance = this;
         audioManager = getSystemService(AudioManager.class);
         rewriteEnabled = NotificationDebugPreferences.isRewriteEnabled(this);
         debugPreferencesListener = (sharedPreferences, key) ->
@@ -105,8 +109,19 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (debugPreferencesListener != null) {
             NotificationDebugPreferences.unregisterListener(this, debugPreferencesListener);
         }
+        removeCallReplacement();
+        if (activeInstance == this) activeInstance = null;
         stopRewriteInfrastructure();
         super.onDestroy();
+    }
+
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        super.onTimeout(startId, fgsType);
+        if (Build.VERSION.SDK_INT >= 34
+                && fgsType == ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE) {
+            endCallSession("incoming CallStyle foreground-service timeout");
+        }
     }
 
     @Override
@@ -246,6 +261,7 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private void clearRewriteState() {
         stopConnectedAudioModeMonitoring();
+        removeCallReplacement();
         getSystemService(NotificationManager.class).cancelAll();
         histories.clear();
         originalToConversation.clear();
@@ -714,7 +730,7 @@ public class WeChatNotificationService extends NotificationListenerService {
             if (callSession.hasActiveState() || hasPersistedReplacement(CALL_REPLACEMENT_ID)) {
                 Log.d(TAG, "keep active rewritten call notification: key=" + sbn.getKey());
             } else {
-                getSystemService(NotificationManager.class).cancel(CALL_REPLACEMENT_ID);
+                removeCallReplacement();
                 Log.i(TAG, "cancel orphaned rewritten call notification: key=" + sbn.getKey());
             }
             return;
@@ -1021,15 +1037,18 @@ public class WeChatNotificationService extends NotificationListenerService {
                 return false;
             }
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
-            boolean fullScreenIntentAllowed = Build.VERSION.SDK_INT < 34
-                    || notificationManager.canUseFullScreenIntent();
             Log.i(TAG, "post incoming WeChat CallStyle"
-                    + ", fullScreenIntentAllowed=" + fullScreenIntentAllowed
                     + ", channel=" + NotificationChannels.WECHAT_CALLS);
-            notificationManager.notify(
-                    CALL_REPLACEMENT_ID,
-                    notification
-            );
+            if (Build.VERSION.SDK_INT >= 37) {
+                startForeground(
+                        CALL_REPLACEMENT_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+                );
+                incomingCallForeground = true;
+            } else {
+                notificationManager.notify(CALL_REPLACEMENT_ID, notification);
+            }
             callSession.incomingVisible = true;
             return true;
         } catch (RuntimeException e) {
@@ -1080,11 +1099,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setOnlyAlertOnce(true)
                 .setCategory(Notification.CATEGORY_CALL)
                 .setColor(0xff33b332)
-                .setContentIntent(contentIntent)
-                // Android API 37 rejects CallStyle notifications that are not attached to an
-                // FGS/UIJ unless they carry a full-screen intent. Reuse the accepted WeChat
-                // launch proxy so locked-screen behavior remains equivalent to the source call.
-                .setFullScreenIntent(contentIntent, true);
+                .setContentIntent(contentIntent);
         if (avatar != null) builder.setLargeIcon(avatar);
 
         if (Build.VERSION.SDK_INT >= 31) {
@@ -1143,6 +1158,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         if (launchIntent != null) builder.setContentIntent(launchIntent);
 
         try {
+            stopIncomingCallForeground();
             Notification notification = CallProgressStyle.build(builder, callIcon);
             if (Build.VERSION.SDK_INT >= 36) {
                 Log.i(TAG, "voip promotedAllowed="
@@ -1379,7 +1395,23 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     static void cancelCallNotification(Context context) {
-        context.getSystemService(NotificationManager.class).cancel(CALL_REPLACEMENT_ID);
+        WeChatNotificationService service = activeInstance;
+        if (service != null) {
+            service.removeCallReplacement();
+        } else {
+            context.getSystemService(NotificationManager.class).cancel(CALL_REPLACEMENT_ID);
+        }
+    }
+
+    private void removeCallReplacement() {
+        stopIncomingCallForeground();
+        getSystemService(NotificationManager.class).cancel(CALL_REPLACEMENT_ID);
+    }
+
+    private void stopIncomingCallForeground() {
+        if (!incomingCallForeground) return;
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        incomingCallForeground = false;
     }
 
     private static boolean isWeChatComponent(String componentName) {

@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-19T13:54:59+08:00",
+  "title": "Design System: WeModern",
+  "extensions": {
+    "typographyMeta": {
+      "display": {
+        "displayName": "Rounded Display",
+        "purpose": "One key readiness conclusion per screen."
+      },
+      "headline": {
+        "displayName": "Sheet Headline",
+        "purpose": "Bottom sheet and local flow titles."
+      },
+      "title": {
+        "displayName": "Setting Title",
+        "purpose": "Setting rows and component names."
+      },
+      "body": {
+        "displayName": "Explanatory Body",
+        "purpose": "Outcome-first guidance and status explanations."
+      },
+      "supporting": {
+        "displayName": "Supporting Copy",
+        "purpose": "Constraints and secondary detail, normally no more than two lines in rows."
+      },
+      "label": {
+        "displayName": "Action Label",
+        "purpose": "Buttons, status labels, and capability pills."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "expressive-theme",
+        "value": "MotionScheme.expressive()",
+        "purpose": "Default Material motion language for prominent UI, Hero transitions, ButtonGroup feedback, and key completion moments."
+      },
+      {
+        "name": "fast-effects",
+        "value": "MotionScheme.fastEffectsSpec()",
+        "purpose": "Color and alpha feedback that does not change component bounds."
+      },
+      {
+        "name": "default-spatial",
+        "value": "MotionScheme.defaultSpatialSpec()",
+        "purpose": "Shape, size, position, reveal, and list placement transitions."
+      },
+      {
+        "name": "coordinated-state-transition",
+        "value": "Transition with spatial and effects specs",
+        "purpose": "Coordinate shape, scale, font axes, container tone, and content when one state changes."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "Android animator duration scale",
+        "purpose": "Remove spatial motion when the system requests reduced or disabled animation while preserving state clarity."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "content-max",
+        "value": "600dp"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Setup Hero",
+      "kind": "custom",
+      "refersTo": "setup-hero",
+      "description": "The primary Expressive moment, coordinating shape, scale, variable type, container tone, and readiness content.",
+      "html": "<section class=\"ds-setup-hero\"><span class=\"ds-setup-icon\">✓</span><div><small>NOTIFICATION STATUS</small><h2>All set</h2><p>WeModern is rewriting supported notifications.</p></div></section>",
+      "css": ".ds-setup-hero { display: flex; gap: 16px; align-items: flex-start; padding: 24px; border-radius: 32px; background: ButtonFace; color: ButtonText; font: 16px/1.5 system-ui, sans-serif; } .ds-setup-hero h2 { margin: 2px 0 8px; font-size: 28px; line-height: 36px; } .ds-setup-hero p, .ds-setup-hero small { margin: 0; opacity: .72; } .ds-setup-icon { display: grid; place-items: center; width: 56px; height: 56px; flex: 0 0 56px; border-radius: 20px; background: Highlight; color: HighlightText; font-size: 28px; }"
+    },
+    {
+      "name": "Grouped Setting Row",
+      "kind": "custom",
+      "refersTo": "grouped-setting-row-middle",
+      "description": "A compact outcome-first permission or system setting row.",
+      "html": "<button class=\"ds-setting-row\"><span class=\"ds-row-icon\">●</span><span class=\"ds-row-copy\"><strong>Send notifications</strong><small>Show rewritten messages and calls</small></span><span class=\"ds-row-status\">Enabled ✓</span></button>",
+      "css": ".ds-setting-row { width: 100%; display: flex; align-items: center; gap: 16px; min-height: 76px; padding: 18px 20px; border: 0; border-radius: 12px; background: ButtonFace; color: ButtonText; text-align: left; font: 14px/20px system-ui, sans-serif; } .ds-setting-row:hover { filter: brightness(.98); } .ds-setting-row:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; } .ds-row-icon { display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 17px; background: Canvas; } .ds-row-copy { display: grid; flex: 1; gap: 3px; } .ds-row-copy strong { font-size: 16px; line-height: 24px; } .ds-row-copy small { opacity: .68; } .ds-row-status { font-weight: 600; white-space: nowrap; }"
+    },
+    {
+      "name": "Switch Card",
+      "kind": "card",
+      "refersTo": "switch-card",
+      "description": "A whole-row switch for an optional WeModern capability.",
+      "html": "<label class=\"ds-switch-card\"><span><strong>Chat bubbles</strong><small>Show supported conversations as Android bubbles</small></span><input type=\"checkbox\" checked></label>",
+      "css": ".ds-switch-card { display: flex; align-items: center; gap: 16px; min-height: 64px; padding: 20px; border-radius: 24px; background: ButtonFace; color: ButtonText; font: 14px/20px system-ui, sans-serif; cursor: pointer; } .ds-switch-card > span { display: grid; flex: 1; gap: 3px; } .ds-switch-card strong { font-size: 16px; line-height: 24px; } .ds-switch-card small { opacity: .68; } .ds-switch-card:focus-within { outline: 3px solid Highlight; outline-offset: 2px; } .ds-switch-card input { width: 48px; height: 28px; accent-color: Highlight; }"
+    },
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "primary-action",
+      "description": "The one next action shown when required setup is incomplete.",
+      "html": "<button class=\"ds-primary-action\">Open notification access</button>",
+      "css": ".ds-primary-action { width: 100%; min-height: 56px; padding: 14px 20px; border: 0; border-radius: 999px; background: Highlight; color: HighlightText; font: 600 14px/20px system-ui, sans-serif; } .ds-primary-action:hover { filter: brightness(.96); } .ds-primary-action:active { transform: scale(.99); } .ds-primary-action:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; } .ds-primary-action:disabled { opacity: .38; }"
+    },
+    {
+      "name": "Test Action",
+      "kind": "button",
+      "refersTo": "test-action",
+      "description": "A secondary Expressive ButtonGroup action that grows under touch while adjacent actions contract.",
+      "html": "<button class=\"ds-test-action\">◉ Voice</button>",
+      "css": ".ds-test-action { min-height: 56px; padding: 12px 16px; border: 0; border-radius: 999px; background: ButtonFace; color: ButtonText; font: 600 14px/20px system-ui, sans-serif; transition: transform 180ms ease-out; } .ds-test-action:hover { filter: brightness(.98); } .ds-test-action:active { transform: scale(.98); } .ds-test-action:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; } .ds-test-action:disabled { opacity: .38; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Lively System Companion / 灵动的系统伙伴",
+    "overview": "WeModern 面向这样一个具体场景：用户在日常室内或户外光线下短暂打开应用，只想快速确认通知改写是否正常、还缺哪项权限，以及下一步该做什么。界面必须跟随 Android 的系统主题和 Material You 动态色，在几秒内给出可靠答案，不要求用户理解实现细节。\n\n设计气质是 reliable at the core、lively on the surface、precise in every state。Material 3 Expressive 是默认设计语言，不是完成基础界面后附加的装饰层。圆润的 Google Sans Flex、鲜明的 shape scale、会响应触摸的组件分组、动态 container role 和有方向感的 motion 共同让工具显得灵动、活泼，同时保持技术可信度。\n\nExpressive 必须服务理解：重要状态可以通过形状、尺度、字体轴、容器层级和空间转换获得更鲜明的反馈；高频设置仍保持熟悉和高效。界面不能静止得像系统参数表，也不能热闹得像营销页面。",
+    "keyCharacteristics": [
+      "先展示整体 readiness 和唯一的下一步动作，再展示设置细节。",
+      "充分使用 Material 3 Expressive 的 typography、shape、component 和 motion vocabulary，而不是只使用基础 Material 控件。",
+      "使用单列、最大宽度 600dp 的扫描路径，手机和大屏都保持清晰阅读顺序。",
+      "通过大小、圆角关系、形状变化和自适应组件分组建立活泼的视觉节奏，避免等大卡片堆叠。",
+      "通过语义色、图标和状态文字共同表达结果，绝不只依赖颜色。",
+      "区分 required、recommended 和 advanced，ADB 能力永远保持次级。",
+      "已完成状态保持紧凑，未完成状态才获得行动入口。",
+      "动效只解释状态变化，优先使用 Material expressive motion scheme，并服从系统动画时长设置。"
+    ],
+    "rules": [
+      {
+        "name": "The Expressive by Default Rule",
+        "body": "每个关键状态转换都必须获得一个有意义的 Expressive 响应，例如形状、尺度、字体轴、容器或空间运动；不能只瞬间替换文字和颜色。",
+        "section": "overview"
+      },
+      {
+        "name": "The One Fact Rule",
+        "body": "每个状态只解释一次。标题、说明、尾标和主卡片不得重复同一句结论。",
+        "section": "overview"
+      },
+      {
+        "name": "The Native First Rule",
+        "body": "优先使用 Android 与 Material 3 已有的设置、开关、底部面板、通知和气泡隐喻，不为风格重新发明标准 affordance。",
+        "section": "overview"
+      },
+      {
+        "name": "The Wallpaper Belongs Rule",
+        "body": "Android 12 及以上必须使用系统 dynamicLightColorScheme 或 dynamicDarkColorScheme。不要固定绿色、蓝色、紫色或任何 hue，也不要用 WeChat green 取代 Material You。",
+        "section": "colors"
+      },
+      {
+        "name": "The Semantic Fallback Rule",
+        "body": "旧版 Android 可以提供静态 fallback，但只能复现同一组 Material 语义角色、对比度和层级。fallback 不是品牌色板，不得驱动新组件设计。",
+        "section": "colors"
+      },
+      {
+        "name": "The Restrained Color Rule",
+        "body": "强调色只服务行动、选择和状态。普通内容由 surface 层级组织，非活动状态禁止使用高饱和颜色。",
+        "section": "colors"
+      },
+      {
+        "name": "The Rounded Utility Rule",
+        "body": "圆体传达亲和力，字重和间距传达可靠性。不要用装饰字体、渐变文字或超大数字制造层级。",
+        "section": "typography"
+      },
+      {
+        "name": "The Display Restriction Rule",
+        "body": "Display 只属于真正的标题。开关、按钮、标签、状态和数据禁止使用 display 变体。",
+        "section": "typography"
+      },
+      {
+        "name": "The Variable Axis Feedback Rule",
+        "body": "变量字体轴只用于 Hero、区块标题或显著的按压与完成反馈；变化必须短促、可逆并与状态同步，正文和长列表禁止持续变形。",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal Depth Rule",
+        "body": "先改变 Material surface role，再考虑阴影。静止内容禁止使用自定义 drop shadow。",
+        "section": "elevation"
+      },
+      {
+        "name": "The Flat at Rest Rule",
+        "body": "阴影不是装饰。只有系统 sheet、按压或平台定义的 elevation 状态可以产生抬升感。",
+        "section": "elevation"
+      },
+      {
+        "name": "The Shape Carries Energy Rule",
+        "body": "灵动感优先来自容器形状、尺度和相邻组件关系。不要用阴影、描边或额外颜色弥补平淡的 shape hierarchy。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 先展示 readiness 和一个下一步动作，再展开权限与技术细节。",
+      "Do 把 Material 3 Expressive 作为默认设计语言，充分使用 expressive shapes、variable font axes、ButtonGroup 和 motion scheme。",
+      "Do 让 Hero、总开关、排序和 Tests 等关键交互通过尺度、形状或空间连续性表现灵动与活泼。",
+      "Do 使用 Material You 动态色和语义 color roles，浅色与深色均跟随系统。",
+      "Do 保持 48dp 最小触控目标、可缩放 sp 文本、明确 accessibility labels 和非纯颜色状态提示。",
+      "Do 用 4dp、8dp、12dp、20dp、24dp、28dp 的节奏区分紧密关系、组件内部和页面区块。",
+      "Do 将 required、recommended 和 advanced 明确分层，optional ADB features 永远是次级能力。",
+      "Do 使用 progressive disclosure 隐藏暂时无关的 Bubbles 与 Advanced 细节。",
+      "Do 同时检查英文、简体中文和繁体中文，允许说明换行，不用压缩字号解决本地化长度。",
+      "Do 在通知、气泡、Live Update 和设置入口中复用 Android 用户已经认识的图标与术语。"
+    ],
+    "donts": [
+      "Don't 把界面做成 dense developer dashboards。",
+      "Don't 只把标准 Material 控件装进一组静态等大卡片就称为 Expressive；没有 shape hierarchy、responsive grouping 或 motion continuity 就不完整。",
+      "Don't 使用 giant repeated cards 或 identical card grids；卡片必须对应真实分组或交互边界。",
+      "Don't 使用 disabled controls as status indicators；状态行和动作控件必须在语义上分离。",
+      "Don't 展示 long walls of system terminology；先解释结果，再按需显示 Android 名称或 ADB 命令。",
+      "Don't 使用 excessive WeChat-green branding，也不要在 DESIGN.md 固定任何替代色系。",
+      "Don't 让 setup flows 把 optional ADB features 表现成 mandatory。",
+      "Don't 使用大于 1dp 的左右彩色 side-stripe border、gradient text、decorative glassmorphism 或 hero-metric template。",
+      "Don't 在 inactive state 使用高饱和色，不要把推荐项画成错误，也不要只靠红绿表达状态。",
+      "Don't 在标准设置可以 inline 或渐进展开时首先使用 modal。",
+      "Don't 把灵动误解为 decorative motion、bounce、elastic 或编排式页面入场；活泼必须来自可解释的状态反馈。",
+      "Don't 在系统允许动画时让关键状态瞬间跳变，也不要让所有属性使用同一种时长和 easing。",
+      "Don't 在按钮、开关、状态标签或数据中使用 display font。",
+      "Don't 在同一屏幕混用不同 icon style、卡片圆角 vocabulary 或开关 affordance。"
+    ]
+  }
+}

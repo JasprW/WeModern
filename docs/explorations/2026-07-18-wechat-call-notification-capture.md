@@ -22,7 +22,7 @@
 | 微信 `id=40` 系统 channel | 将 `reminder_channel_id`（系统显示为“其他通知”）设为 **Silent + Minimize**，但保持分类开启。 | 压低 `Voice call in use` 常驻源通知。此 channel 不是通话专属名称，降级可能同时影响微信放在“其他通知”中的其他提醒，这是已接受的系统设置取舍。 |
 | 来电识别 | 以 `id=41` 的 `CATEGORY_CALL + fullScreenIntent + custom RemoteViews + 邀请文案`组合识别来电，不把动态 channel ID 当作唯一条件。 | 避免微信重建 channel 后识别失效；未知或不完整组合不改写。 |
 | 来电替换 | 使用 Android 标准 `Notification.CallStyle.forIncomingCall` 和 `Person`，联系人名称来自邀请文案或标题，头像优先复用已缓存的微信会话头像。 | 不使用自定义通知布局；首次出现且没有头像缓存的联系人显示系统 fallback。 |
-| API 37 发布条件 | CallStyle 复用微信目标的代理 `fullScreenIntent`，并声明 `USE_FULL_SCREEN_INTENT`。 | 解决 API 37 拒绝非 FGS/UIJ 且无 full-screen intent 的 CallStyle；不硬编码微信内部 Activity。 |
+| API 37 发布条件 | 现有通知监听服务临时用 `shortService` foreground type 发布不含 FSI 的 CallStyle；WeModern 只声明基础 `FOREGROUND_SERVICE`，不声明 `USE_FULL_SCREEN_INTENT`。 | 满足 API 37 的 FGS/FSI/UIJ 三选一校验，同时锁屏不会自动启动 Activity；两分钟保护超时早于系统约三分钟限制，接通前主动退出 FGS。API 26–36 不走该兼容路径。 |
 | CallStyle 操作 | Content、Answer、Decline 使用身份不同的 WeModern proxy PendingIntent，但最终都打开微信原通话页面。 | Answer/Decline 不能直接控制微信接听或拒绝；两个按钮都打开微信页面是明确接受的 tradeoff。 |
 | 来电计时 | CallStyle 阶段不启动 chronometer，也不请求 Live Update promotion。 | 来电待接听时间不会误计入通话时长。 |
 | `id=41` 隐藏 | CallStyle 成功发布后，对微信 ongoing `id=41` 使用 2 秒滚动 snooze；每次到期重现前清除 post dedupe 身份并再次处理。 | 普通 listener cancel 已证实不可靠；短周期将快速重拨的最坏抑制窗口限制在约 2 秒。系统 channel 的 Silent + Minimize 是额外保险。 |
@@ -35,15 +35,25 @@
 | 管线隔离 | `id=40`、`id=41` 和 WeModern 通话替换都明确排除消息历史、消息分组、会话 shortcut 与 bubble host。 | 防止此前出现的 2 条微信 + 3 条 WeModern（含 bubble host）通知膨胀。 |
 | 调试能力 | “采集与日志”独立记录微信原始事件；“改写通知”单独控制分类、隐藏和替换。 | 可以 capture/logging 而不 rewrite，原微信通知不会因调试采集被取消；后续视频优化继续沿用此采样方式。 |
 
-当前验收结论：在上述两个微信 channel 均设为 Silent + Minimize 后，语音来电 CallStyle 表现符合预期，接通后的 Live Update 能显示。约 5 秒 promotion 延迟的代码原因已定位并加入音频模式快速确认；后续语音真机复测确认 Live Update 紧随接通升级，用户确认延迟问题已完全解决。系统 channel 降级属于设备侧配置，重装 WeModern 不会替用户自动完成，也不能关闭对应分类，否则可能切断 WeModern 的识别输入。
+当前验收结论：在上述两个微信 channel 均设为 Silent + Minimize 后，语音来电 CallStyle 表现符合预期，接通后的 Live Update 能显示。约 5 秒 promotion 延迟的代码原因已定位并加入音频模式快速确认；后续语音真机复测确认 Live Update 紧随接通升级，用户确认延迟问题已完全解决。锁屏测试确认禁用全屏通知特殊访问后，Pixel 9 Pro / API 37 会显示带操作按钮的 CallStyle 而不自动打开微信，因此最终产品只保留该通知形态。系统 channel 降级属于设备侧配置，重装 WeModern 不会替用户自动完成，也不能关闭对应分类，否则可能切断 WeModern 的识别输入。
 
 ## 2026-07-19 持续 CallStyle 与实时接通优化
 
-- Android 14+ 的 full-screen intent 是 CallStyle 持续 heads-up 的系统前置条件。项目原本已经声明权限、使用 High importance 通话 channel 并设置代理 `fullScreenIntent`；本轮增加 `NotificationManager.canUseFullScreenIntent()` 运行时状态、发布日志和设置页系统授权入口。应用仍在用户点击通知或微信 Activity 真正恢复时取消 CallStyle，因此“持续”限定为用户尚未打开微信的来电阶段。
+- 本轮曾把 Android 14+ full-screen intent 特殊访问作为持续 heads-up 的前置条件，并加入 `canUseFullScreenIntent()` 状态、授权入口和发布日志；后续锁屏验证证明权限开启会直接启动微信 Activity，不符合最终产品目标。这些 UI、状态和权限声明现已删除，仅保留本条作为已撤回尝试记录。
 - 已捕获语音序列的首个 `id=40/0x62` 在进入微信页面时出现，随后同一突发组的两个更新只晚约 110ms，均被 1 秒保护窗口过滤；源通知没有新的接听更新时，Live Update 在约 10.3 秒后才建立，证明延迟来自 `CONNECTED_STATUS_FALLBACK_DELAY_MS=10_000`，不是 Android promotion 本身。
 - 同一设备 `dumpsys audio` 历史记录显示微信进程在真实接通附近调用 `setMode(MODE_IN_COMMUNICATION)`。语音样本中该事件约为 11:16:06.655，旧兜底约在 11:16:12.8 执行，可提前约 6 秒；视频样本中 `id=40/0x62` 约在 11:22:45.5 出现，音频模式于 11:22:51.831 切换并在 11:23:05.052 恢复 Normal，与真实连接区间一致。音频路由本身会在响铃时提前切换，不能替代模式信号。
 - 当前实现只在首个 `0x62` 候选存在时启动检测：API 31+ 注册 `OnModeChangedListener`，API 26–30 每 250ms 轮询 `getMode()`；确认前再次检查 rewrite 已开启、微信状态源仍被跟踪、候选仍有效且尚未连接。成功 promotion、候选撤销、会话结束、关闭 rewrite 或服务清理都会停止监听/轮询。
 - 后续通知更新和 10 秒 fallback 保留，作为微信未切换音频模式、系统回调不可用或设备行为差异时的兼容路径。暂不使用 `MODE_NORMAL` 单独结束 Live Update，避免音频路由短暂重配造成提前结束。
+
+## 2026-07-19 锁屏来电样本与展示取舍
+
+- 两通锁屏语音邀请分别在 `capturedAt=1784434216836` 和 `1784434228850` 捕获到微信 `id=41/0x96`；两者都有 `CATEGORY_CALL`、custom RemoteViews、邀请文案和微信创建的 immutable `fullScreenIntent`。`id=40/0x02` 也分别在约 40–54ms 后出现，说明锁屏 pattern 与亮屏一致，不存在“锁屏不发布 id=41”的新分支。
+- 两通都在约 7 秒后由微信以 reason 8 移除 `id=41` 和 `id=40`，期间没有 `VideoActivity` 创建或 resume。样本采集时偏好明确为 `capture_logging=true, rewrite=false`，所以没有 WeModern CallStyle 属于预期；微信动态来电 channel 又被用户设为 importance 1 / Silent + Minimize，系统没有执行它自己的 full-screen intent。
+- Android 官方锁屏来电模型要求 full-screen notification 启动允许用户接听的 Activity。当前 CallStyle 原先把 WeModern proxy 同时用作 content 和 full-screen intent；proxy 一启动就会取消 CallStyle，再用 `MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE` 二次发送微信 token。锁屏下 proxy 可能尚不可见，第二跳可能被推迟到解锁，并且无论成功与否都已经移除了 CallStyle。
+- 一次候选修复把微信原始 token 直接交给 `setFullScreenIntent(..., true)`。Pixel 9 Pro / API 37 真机确认该路径会在锁屏上立即启动微信全屏接听 Activity；虽然解决了解锁后才跳转的问题，但用户明确不希望来电自动打开 Activity，因此该展示行为被否决。
+- 同一构建关闭 WeModern 的全屏通知特殊访问后，系统不再发送 token，而是把通知降级为锁屏/AOD 上带 Answer/Decline 的展开式 CallStyle HUN；用户确认这种效果更好。最终实现删除 `USE_FULL_SCREEN_INTENT` 声明、设置入口和授权状态，整卡和操作按钮只在用户主动点击后通过 proxy 打开微信。
+- AOSP API 37 实现进一步证明“无权限声明但保留 FSI 字段”不可作为最终方案：NotificationManagerService 会先清除无权限的 `fullScreenIntent`，且因为应用从未 requested 该权限，不会设置 `FLAG_FSI_REQUESTED_BUT_DENIED`；后续 CallStyle 校验仍会拒绝通知。最终改用通知监听服务自身的临时 `shortService` FGS，在通知对象中完全不设置 FSI；接通前先退出 foreground，再发布不受 short-service 时限约束的 Live Update。
+- 调研结论是不引入假的 self-managed `ConnectionService`：它不会在普通情况下自动替应用生成来电 UI，且 WeModern 无法真正接听、拒绝或管理微信音频生命周期；伪造 Telecom call 还会污染当前基于音频模式的真实接通判断。
 
 ## 2026-07-19 视频通话源序列对照与优化复用
 
@@ -88,7 +98,7 @@
 - 开启采集和改写后的首轮语音验证中，`id=41` 在 `capturedAt=1784425920094` 发布，直到 13.7 秒后才由微信以 reason 8 撤销；期间没有 listener-cancel removal，用户实际仍看到微信 `id=41`。同轮偏好文件确认两个开关均为 `true`，排除设置未开启。
 - 前一轮视频样本同样保留 `id=41`，但接通后的 `id=40/0x62` 出现 reason 18 snooze，说明服务和连接态改写路径确实在工作。问题收敛到来电发布前额外读取 `WeChatForegroundState`：该状态依赖异步 activity 日志，离开微信后可能仍保留旧 foreground component，于是 CallStyle 根本没有进入发布流程。
 - 修正后，特征命中的 `id=41` 本身是来电展示的权威信号，代码始终先尝试发布 CallStyle，只有 `notify()` 成功后才隐藏原通知；真实的微信 activity resume 事件仍会撤下来电替换卡片。Answer、Decline 和整卡点击使用三个身份独立的 proxy PendingIntent，三个目标都保持为同一个微信通话页面。
-- 第二轮仍失败后，使用 debug-only 真机探针复用正式 CallStyle builder，API 37 从 `NotificationManager.notify()` 返回明确异常：`CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent`。补充 `USE_FULL_SCREEN_INTENT` 和代理 full-screen intent 后，同一探针成功发布，系统记录为 `category=call`、两项 action、`ONGOING_EVENT|HIGH_PRIORITY|NO_DISMISS`；验证完成后导出探针已删除。
+- 第二轮仍失败后，使用 debug-only 真机探针复用正式 CallStyle builder，API 37 从 `NotificationManager.notify()` 返回明确异常：`CallStyle notifications must be for a foreground service or user initated job or use a fullScreenIntent`。当时补充权限和代理 full-screen intent 后，同一探针成功发布，系统记录为 `category=call`、两项 action、`ONGOING_EVENT|HIGH_PRIORITY|NO_DISMISS`；验证完成后导出探针已删除。后续锁屏取舍否决了 FSI 路径，最终改用同一异常明确允许的临时 FGS 分支。
 - 同轮系统日志还显示新的 `id=40` 多次被 `Ignored enqueue for snoozed notification` 丢弃。原因是上一通连接态曾对固定 key `0|com.tencent.mm|40|null|10349` snooze 30 分钟，微信快速重拨仍复用该 key。设备残留已通过 shell `unsnooze` 清除，正式实现删除连接态 snooze，改为替换成功后仅对当前通知执行 listener cancel。
 - 第三轮首次同时成功显示 CallStyle 和 Live Update，但微信 `id=41` 仍保留；capture 中没有 listener-cancel removal，直到进入微信后才出现 reason 8，证明系统忽略对 ongoing `id=41` 的普通 cancel。来电源现改用 2 秒滚动 snooze；每次 snooze 前清除 post dedupe 身份，使同一系统记录到期重现时可立即再次隐藏，同时把快速重拨最坏抑制窗口限制为约 2 秒。
 - 同一轮行为对齐显示：`id=41` 在 `1784427321908` 因进入微信撤销，随后 `id=40` 在约 0.4 秒内从 `0x02` 变成首组 `0x62`；用户尚未接听。真正接听约 8.6 秒后，`id=40` 才发布另一组 `0x62`。早晚两组的标准字段除 `when/postTime` 外完全一致，因此 foreground flags 不能单独证明接通。当前窄规则等待首个 `0x62` 之后至少 1 秒的新更新；10 秒兜底是可用性折衷，并非精确接通信号。
@@ -202,8 +212,10 @@ adb exec-out run-as me.jaspr.wemodern cat files/wechat_notification_capture.json
 - 当前运行时开关版本已通过 `:app:testDebugUnitTest`、`:app:assembleDebug` 与 `:app:lintDebug`，并已安装到 Pixel 9 Pro。
 - 结构化界面检查确认“采集与日志”为开启、“改写通知”为关闭；顶部状态显示“正在采集微信原始通知；通知改写已关闭”。
 - 服务日志确认 `captureLogging=true, rewrite=false` 和 `listener connected, rewrites disabled`；最终通知列表没有 WeModern 自有通知。
-- 音频模式快速确认版本新增 `CallAudioModePolicyTest` 的正反例，并再次通过 `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:lintDebug` 和 `git diff --check`；Debug APK 已安装到同一 Pixel 9 Pro / API 37。结构化界面确认“Incoming call pop-up”为 On，说明该设备的 `canUseFullScreenIntent()` 返回允许；通知监听器重连正常。安装时设备仍为 capture on / rewrite off，因此尚未把基础检查误记为真实通话验收。
+- 音频模式快速确认版本新增 `CallAudioModePolicyTest` 的正反例，并再次通过 `:app:testDebugUnitTest`、`:app:assembleDebug`、`:app:lintDebug` 和 `git diff --check`；Debug APK 已安装到同一 Pixel 9 Pro / API 37。当时结构化界面确认“Incoming call pop-up”为 On，说明该设备的 `canUseFullScreenIntent()` 返回允许；该入口和权限后来因锁屏只保留 CallStyle 的产品决定而删除。安装时设备仍为 capture on / rewrite off，因此尚未把基础检查误记为真实通话验收。
 - 随后的语音 rewrite 真机测试确认：实际接通触发音频模式切换后，Live Update 立即升级，旧版约 5 秒体感延迟不再出现；用户验收结论为“延迟问题已经完美解决”。
+- 锁屏 direct full-screen handoff 版本通过 `:app:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug` 与 `git diff --check`，并已安装到同一 Pixel 9 Pro / API 37；随后真实锁屏来电确认它会立即启动微信 Activity。关闭特殊访问后，同一来电改为系统 CallStyle HUN并获用户确认；direct handoff 因此不作为最终行为。
+- 第一版无权限声明候选删除了设置入口并成功安装，APK 合并 manifest 与设备 `dumpsys package` 均确认 requested permissions 不含 `USE_FULL_SCREEN_INTENT`；但随后 AOSP 源码审查发现它的无权限 FSI 字段会在 CallStyle 校验前被清除，因此未作为最终实现。替代的 `shortService` FGS 版本已通过 `:app:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug` 与 `git diff --check`，仍需安装并完成一通真实锁屏来电验收。
 
 ## 后续采集场景
 

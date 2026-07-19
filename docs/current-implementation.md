@@ -1,12 +1,12 @@
 # WeModern 当前实现
 
-- 当前版本：1.6.1（`versionCode` 32）
+- 当前版本：1.7.0（`versionCode` 33）
 - 支持范围：`minSdk` 26；编译和目标 API 37（Android 17）
 - 最近代码状态：2026-07-19
 
 ## 0. 微信通知采集调试模式
 
-当前开发分支先撤回了所有 `v1.6.1` 之后缺少完整证据的语音/视频通话改写实验，随后根据 capture-only JSONL 的完整样本重新实现了窄范围状态机。Pixel 9 Pro / API 37 已确认：把微信 `id=41` 来电 channel 和 `id=40` 的 `reminder_channel_id` 都手动设为 Silent + Minimize 后，语音标准 CallStyle 表现符合预期，接通后的 Live Update 能显示。针对原有约 5 秒延迟，当前实现增加由活跃微信状态通知门控的音频模式接通确认；语音真机复测确认升级时机已紧随实际接通，体感延迟问题解决。最新完整视频 capture 在 ID、channel、flags 转换、RemoteViews、PendingIntent 和结束 reason 上均与语音同构，因此视频复用相同优化，仅切换视频文案、图标和 `CallStyle.setIsVideo(true)`；视频 rewrite 可见结果仍待下一通真机验收。设置界面提供两个互不依赖、运行时立即生效的 Debug 开关：总开关“采集与日志”控制微信原始通知采集及其 logcat / JSONL 输出，“改写通知”单独控制解析、隐藏、取消或 snooze、替换通知、Live Update、气泡 host 和同步移除日志 watcher。开发阶段默认开启采集、关闭改写。
+当前开发分支先撤回了所有 `v1.6.1` 之后缺少完整证据的语音/视频通话改写实验，随后根据 capture-only JSONL 的完整样本重新实现了窄范围状态机。Pixel 9 Pro / API 37 已确认：把微信 `id=41` 来电 channel 和 `id=40` 的 `reminder_channel_id` 都手动设为 Silent + Minimize 后，语音标准 CallStyle 表现符合预期，接通后的 Live Update 能显示。针对原有约 5 秒延迟，当前实现增加由活跃微信状态通知门控的音频模式接通确认；语音真机复测确认升级时机已紧随实际接通，体感延迟问题解决。锁屏测试同时确认：全屏通知权限关闭时，系统会把来电呈现为带操作按钮的 CallStyle，而不会直接启动微信；当前实现据此删除该权限声明和设置入口，只保留 CallStyle 通知体验。最新完整视频 capture 在 ID、channel、flags 转换、RemoteViews、PendingIntent 和结束 reason 上均与语音同构，因此视频复用相同优化，仅切换视频文案、图标和 `CallStyle.setIsVideo(true)`；视频 rewrite 可见结果仍待下一通真机验收。设置界面提供两个互不依赖、运行时立即生效的 Debug 开关：总开关“采集与日志”控制微信原始通知采集及其 logcat / JSONL 输出，“改写通知”单独控制解析、隐藏、取消或 snooze、替换通知、Live Update、气泡 host 和同步移除日志 watcher。开发阶段默认开启采集、关闭改写。
 
 本轮每次通话实验、真机异常、回滚内容、新样本证据和当前可用基线均保存在[微信语音/视频通话通知实验与采集记录](explorations/2026-07-18-wechat-call-notification-capture.md)。历史启发式方案仍属已撤回探索；当前开发代码只包含其中 2026-07-19 证据驱动的窄范围状态机，语音和视频共用该状态机，不引入独立视频启发式分支。
 
@@ -36,11 +36,11 @@ Android 10（API 29）及以上可为每个允许的会话附加 `BubbleMetadata
 
 会话默认按私聊和群聊分别配置；每个已知会话还可覆盖为“始终允许”或“永不允许”。会话身份由微信通知提供的标题构成（`wechat:<title>`），昵称、群名或语言变化会使旧覆盖失配；这不是微信稳定内部 ID。
 
-### Experimental: Bubble trampoline
+### Bubble trampoline
 
-Android 12（API 31）及以上可启用实验性 trampoline 模式。它不为每个会话创建 WeChat task，而是使用固定 ID、固定 long-lived shortcut 的独立 host 通知，只保留一个代表最新合资格会话的气泡。用户展开气泡时才把微信 Home 作为嵌入任务根启动。
+Android 12（API 31）及以上可启用 trampoline 模式。它不为每个会话创建 WeChat task，而是使用固定 ID、固定 long-lived shortcut 的独立 host 通知，只保留一个代表最新合资格会话的气泡。用户展开气泡时才把微信 Home 作为嵌入任务根启动；通知栏中仍可能同时出现一条 host 通知，设置页提供 channel 入口以降低其视觉存在感。
 
-host 与普通消息分离且不属于消息分组，因此普通替换通知仍可被同步移除，host 不会因原通知消失而被误删。新消息只更新这个 host；关闭 trampoline 或 Chat bubbles 时会移除 host 并恢复常规模式。host 使用独立的静默、最小化通道，避免产生额外状态栏图标、文字 heads-up、声音或振动。
+host 与普通消息分离且不属于消息分组，因此普通替换通知仍可被同步移除，host 不会因原通知消失而被误删。新消息只更新这个 host；关闭 trampoline 时恢复常规模式，关闭 Chat bubbles 时只移除当前 host 并保留 trampoline 偏好，重新开启 Chat bubbles 后自动恢复。host 使用独立的静默、最小化通道，降低额外状态栏图标、文字 heads-up、声音或振动的干扰。
 
 为处理微信 task 生命周期，应用结合 activity 日志跟踪嵌入任务：仅在实际 bubble task 移除时清除 host，避免普通微信前台切换、通知移除或新会话更新错误关闭气泡。
 
@@ -48,7 +48,7 @@ host 与普通消息分离且不属于消息分组，因此普通替换通知仍
 
 “改写通知”开启后，新的通话分类器把微信当前语音/视频来电序列建模为三阶段，并为整个会话只使用一个固定 WeModern 通知 ID。动态 channel ID 仅作上下文，不单独决定状态：
 
-- `id=41` 的 `CATEGORY_CALL + fullScreenIntent + custom RemoteViews + 邀请文案`组合代表来电展示。命中后始终尝试发布 Android 标准 `Notification.CallStyle.forIncomingCall`，不以异步 activity 日志维护的微信前台状态作为发布门槛；替换通知同时设置转发微信目标的 `fullScreenIntent`，满足 API 37 对非 FGS/UIJ CallStyle 的发布要求。Android 14+ 设置页显示系统“来电持续弹出”特殊访问状态，未开启时可跳转到 `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT`；服务每次发布 CallStyle 也记录 `canUseFullScreenIntent()` 结果。权限有效且通话 channel 保持 High 时，系统 heads-up 可持续到用户打开微信或通知被应用取消。WeModern 成功发布后以 2 秒短周期滚动 snooze 隐藏 Android 不允许 listener cancel 的微信 ongoing 来电项，真正观察到微信 activity resume 时再移除 CallStyle。联系人名称从邀请文案或关联状态标题取得，头像优先读取普通微信消息已保存的会话头像缓存。没有缓存时由系统标准布局显示 fallback。
+- `id=41` 的 `CATEGORY_CALL + fullScreenIntent + custom RemoteViews + 邀请文案`组合代表来电展示。命中后始终尝试发布 Android 标准 `Notification.CallStyle.forIncomingCall`，不以异步 activity 日志维护的微信前台状态作为发布门槛。API 37 会拒绝既非 FGS/UIJ、又没有 `fullScreenIntent` 字段的 CallStyle；为避免申请会启动锁屏 Activity 的全屏权限，该版本改由现有通知监听服务临时以 `shortService` foreground type 承载纯 CallStyle，通知对象本身不带 FSI。来电源消失、用户点击、两分钟保护超时或真正接通时立即 `stopForeground(REMOVE)`；接通后再以原固定 ID 发布现有 Live Update，避免三分钟 short-service 系统时限影响长通话。API 26–36 不需要该 foreground 兼容路径，继续发布普通 CallStyle。整卡、Answer 和 Decline 均通过身份独立的 WeModern proxy 在用户主动点击后打开微信。WeModern 成功发布后以 2 秒短周期滚动 snooze 隐藏 Android 不允许 listener cancel 的微信 ongoing 来电项，真正观察到微信 activity resume 时再移除 CallStyle。联系人名称从邀请文案或关联状态标题取得，头像优先读取普通微信消息已保存的会话头像缓存。没有缓存时由系统标准布局显示 fallback。
 - CallStyle 的 Answer 和 Decline action 使用两个身份独立的 WeModern activity proxy PendingIntent，但都转发微信原通知的同一个 `fullScreenIntent`（缺失时使用 `contentIntent`）。这是已接受的行为折衷：两个按钮都只打开微信全屏接听/挂断页，用户仍需在微信内完成真正操作；action 点击和微信 activity resume 只移除来电卡片，不代表接通。
 - `id=40` 从来电开始就显示 `Voice call in use` 或 `Video call in progress`。flags 仅为 `0x02` 时被明确排除消息、会话历史和 bubble host 管线，并在 CallStyle 已可承接来电状态时尝试 listener cancel；该取消不会 snooze 复用 key，因此后续状态更新仍可进入监听器。进入微信接听页本身就会让 flags 变为 `0x62`（`ONGOING_EVENT | NO_CLEAR | FOREGROUND_SERVICE`），因此首个 `0x62` 只作为连接候选。候选存在期间，API 31+ 通过 `AudioManager.addOnModeChangedListener()` 监听 `MODE_IN_COMMUNICATION` / `MODE_IN_CALL`，API 26–30 每 250ms 读取一次 `getMode()`；只有改写开启、微信 `id=40` 状态仍被跟踪且尚未接通时，音频模式才允许立即确认接通。若音频模式不可用，至少 1 秒后的新 `0x62` 更新仍可确认；微信不再更新时保留 10 秒兜底，避免整通电话没有 Live Update。
 
@@ -70,9 +70,9 @@ host 与普通消息分离且不属于消息分组，因此普通替换通知仍
 
 ## 5. 设置与测试
 
-`MainActivity` 是 Compose / Material 3 设置界面，显示通知使用权、发送通知权限、Android 14+ 来电持续弹出特殊访问、Live Update、免电池优化、气泡系统设置与 channel 设置、同步移除前置条件、独立的采集/改写 Debug 开关，以及消息/语音/视频测试。顶部运行状态把已授权后的模式明确分为“关闭”“仅调试”和“已就绪”，分别使用电源、调试和勾选图标及不同卡片色调；关闭态的电源图标使用高对比度深色中性底板，避免与中性卡片背景融为一体。正文同步显示“原样透传”“只采集”或“正在改写”。必要授权未完成时仍使用闪电图标和剩余步骤。Debug 和 Bubbles 区域标题不显示额外的说明或状态尾标，具体状态只由各自开关和正文表达。提供简体中文、繁体中文和默认资源；Android 动态色与深色模式可用。
+`MainActivity` 是 Compose / Material 3 设置界面，显示通知使用权、发送通知权限、Live Update、免电池优化、气泡系统设置与 channel 设置、同步移除前置条件、独立的采集/改写 Debug 开关，以及消息/语音/视频测试。应用不申请全屏通知特殊访问，也不提供相关设置入口。顶部运行状态把已授权后的模式明确分为“关闭”“仅调试”和“已就绪”，分别使用电源、调试和勾选图标及不同卡片色调；关闭态的电源图标使用高对比度深色中性底板，避免与中性卡片背景融为一体。正文同步显示“原样透传”“只采集”或“正在改写”。必要授权未完成时仍使用闪电图标和剩余步骤。Debug、Bubbles 与 Tests 区域标题不显示额外的说明或状态尾标，具体状态只由各自开关和正文表达。Android 气泡设置与 Chat bubbles 开关使用 Material Symbol `bubble`。提供简体中文、繁体中文和默认资源；Android 动态色与深色模式可用。
 
-设置页的 `LazyColumn` 以单独的 header、设置行和卡片作为 lazy item，并为静态内容提供稳定 key 与准确 content type；1.5 个 viewport 的前向 cache window 会提前准备后续项目，0.5 个 viewport 的后向窗口用于快速折返。Setup 与 Bubbles 不再各自作为包含多张卡片的超高单一 item 一次性组合和布局，从而把首次滚入区块时的 UI 线程工作分散到可见及预取项目。Pixel 9 Pro / API 37 的 Debug 构建在相同 10 次滚动脚本下，优化前一次基线为 533 帧、6 个 deadline miss、99 分位 34 ms；优化后多轮 99 分位为 15–21 ms，未再出现基线中的 300 ms 极端帧。调试构建和合成 ADB 手势仍有测量波动，不能把该数据视为发布构建的绝对帧率保证；完整调查见[设置页滚动性能检查](explorations/2026-07-18-settings-scroll-performance.md)。
+设置页的 `LazyColumn` 以单独的 header、设置行和卡片作为 lazy item，并为静态内容提供稳定 key 与准确 content type；1.5 个 viewport 的前向 cache window 会提前准备后续项目，0.5 个 viewport 的后向窗口用于快速折返。Setup 与 Bubbles 不再各自作为包含多张卡片的超高单一 item 一次性组合和布局，从而把首次滚入区块时的 UI 线程工作分散到可见及预取项目。Chat bubbles 的依赖项继续保持独立 lazy item，并通过 Compose 原生 `AnimatedVisibility` 以无回弹的短展开/淡入过渡显示或隐藏；系统动画时长关闭时这些动画也随之关闭。单会话设置按稳定会话 key 拆分 lazy item，排序切换使用原生 `animateItem` 位置动画。Pixel 9 Pro / API 37 的 Debug 构建在相同 10 次滚动脚本下，优化前一次基线为 533 帧、6 个 deadline miss、99 分位 34 ms；优化后多轮 99 分位为 15–21 ms，未再出现基线中的 300 ms 极端帧。调试构建和合成 ADB 手势仍有测量波动，不能把该数据视为发布构建的绝对帧率保证；完整调查见[设置页滚动性能检查](explorations/2026-07-18-settings-scroll-performance.md)。
 
 Message 测试通知 ID 为 `100`，小图标必须是 `R.drawable.ic_wechat_notification_small`。该 PNG 是从 WeChat 8.0.69 的真实状态栏小图标提取，不能用启动器图标、头像或彩色 fallback 替换；否则 Android alpha-mask 渲染会显示方块。trampoline host 成功更新时，测试消息不会同时保留 ID `100`。
 
@@ -104,7 +104,7 @@ Message 测试通知 ID 为 `100`，小图标必须是 `R.drawable.ic_wechat_not
 
 - WeModern 不拥有微信联系人内部 ID，不能稳定地把外部分享直接投递到指定微信联系人。
 - 微信通知标题不是稳定会话标识；名称变更会影响 per-conversation 覆盖和对应快捷方式。
-- Bubble trampoline 是实验能力，依赖 Android / 厂商 SystemUI 与微信 task 行为；必须进行真机回归。
+- Bubble trampoline 依赖 Android / 厂商 SystemUI 与微信 task 行为；必须进行真机回归。
 - Android 8/9 保留重写通知，但不附加 bubble metadata。
 
 有关 Direct Share 和已读状态的证据及结论见 [功能探索](explorations/README.md)。

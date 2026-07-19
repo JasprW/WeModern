@@ -6,6 +6,7 @@
 
 | 文档 | 用途 |
 | --- | --- |
+| [设计系统](../DESIGN.md) | 当前 Compose 界面的视觉 token、Material You 语义色、组件、动效与设计护栏；机器可读扩展见 [DESIGN.json](../DESIGN.json) |
 | [当前实现](current-implementation.md) | 已交付功能、关键实现、约束、已知边界与验证要求 |
 | [版本变更记录](changelog.md) | 按版本和日期汇总功能、修复与构建变更 |
 | [功能探索](explorations/README.md) | 尚未交付能力的调查结论、依赖和下一步 |
