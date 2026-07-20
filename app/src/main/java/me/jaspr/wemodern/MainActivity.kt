@@ -211,6 +211,13 @@ class MainActivity : ComponentActivity() {
                             this,
                             enabled && setupState.bubbleTrampolineCanBeSet,
                         )
+                        if (!enabled) {
+                            BubbleTrampolineBehavior.setConversationBridgeEnabled(this, false)
+                            BubbleTrampolineBehavior.setMultipleConversationBubblesEnabled(
+                                this,
+                                false,
+                            )
+                        }
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
                         if (enabled && !setupState.bubbleHostCanBubble) {
@@ -221,6 +228,20 @@ class MainActivity : ComponentActivity() {
                         BubbleTrampolineBehavior.setConversationBridgeEnabled(
                             this,
                             enabled && setupState.bubbleTrampolineEnabled,
+                        )
+                        if (!enabled) {
+                            BubbleTrampolineBehavior.setMultipleConversationBubblesEnabled(
+                                this,
+                                false,
+                            )
+                        }
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                    },
+                    onSetMultipleConversationBubblesEnabled = { enabled ->
+                        BubbleTrampolineBehavior.setMultipleConversationBubblesEnabled(
+                            this,
+                            enabled && setupState.bubbleConversationBridgeEnabled,
                         )
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
@@ -325,6 +346,8 @@ class MainActivity : ComponentActivity() {
             bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
             bubbleConversationBridgeEnabled =
                 BubbleTrampolineBehavior.isConversationBridgeEnabled(this),
+            multipleConversationBubblesEnabled =
+                BubbleTrampolineBehavior.isMultipleConversationBubblesEnabled(this),
             bubbleHostNotificationMinimized =
                 NotificationChannels.isBubbleHostNotificationMinimized(this),
             bubbleHostNotificationsDisabled =
@@ -632,6 +655,7 @@ private data class SetupState(
     val appIconOpensWeChat: Boolean = false,
     val bubbleTrampolineEnabled: Boolean = false,
     val bubbleConversationBridgeEnabled: Boolean = false,
+    val multipleConversationBubblesEnabled: Boolean = false,
     val bubbleHostNotificationMinimized: Boolean = false,
     val bubbleHostNotificationsDisabled: Boolean = false,
     val bubbleHostCanBubble: Boolean = false,
@@ -736,6 +760,7 @@ private fun WeModernApp(
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onSetBubbleConversationBridgeEnabled: (Boolean) -> Unit,
+    onSetMultipleConversationBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
     onSetConversationSortOrder: (ConversationBubblePreferences.SortOrder) -> Unit,
@@ -841,6 +866,8 @@ private fun WeModernApp(
                         onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
                         onSetBubbleConversationBridgeEnabled =
                             onSetBubbleConversationBridgeEnabled,
+                        onSetMultipleConversationBubblesEnabled =
+                            onSetMultipleConversationBubblesEnabled,
                         onOpenBubbleHostChannelSettings = onOpenBubbleHostChannelSettings,
                         onSetDefaultPrivateBubblesEnabled =
                             onSetDefaultPrivateBubblesEnabled,
@@ -1566,6 +1593,7 @@ private fun LazyListScope.bubbleSectionItems(
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
     onSetBubbleConversationBridgeEnabled: (Boolean) -> Unit,
+    onSetMultipleConversationBubblesEnabled: (Boolean) -> Unit,
     onOpenBubbleHostChannelSettings: () -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
@@ -1648,9 +1676,32 @@ private fun LazyListScope.bubbleSectionItems(
     }
     if (state.bubbleTrampolineAvailable) {
         animatedSettingsPageItem(
+            key = "multiple_conversation_bubbles_experimental",
+            contentType = "switch_card",
+            visible = state.chatBubblesReady &&
+                    state.bubbleTrampolineEnabled &&
+                    state.bubbleConversationBridgeEnabled,
+            spacingAfter = 8.dp,
+        ) {
+            SettingsSwitchCard(
+                title = stringResource(R.string.multiple_conversation_bubbles_title),
+                supporting = stringResource(
+                    R.string.multiple_conversation_bubbles_description,
+                ),
+                iconPainter = painterResource(R.drawable.ic_material_symbol_bubble_24),
+                checked = state.multipleConversationBubblesEnabled,
+                enabled = state.bubbleConversationBridgeEnabled,
+                onCheckedChange = onSetMultipleConversationBubblesEnabled,
+            )
+        }
+    }
+    if (state.bubbleTrampolineAvailable) {
+        animatedSettingsPageItem(
             key = "bubble_host_channel",
             contentType = "action_card",
-            visible = state.chatBubblesReady && state.bubbleTrampolineEnabled,
+            visible = state.chatBubblesReady &&
+                    state.bubbleTrampolineEnabled &&
+                    !state.multipleConversationBubblesEnabled,
             spacingAfter = 8.dp,
         ) {
             BubbleHostChannelCard(

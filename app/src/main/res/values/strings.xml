@@ -39,6 +39,8 @@
     <string name="bubble_trampoline_description">Open WeChat inside the bubble; the notification shade may still show a duplicate notification</string>
     <string name="bubble_conversation_bridge_title">Open exact conversation (Experimental)</string>
     <string name="bubble_conversation_bridge_description">Forward the latest WeChat notification action inside the bubble. It may leave the bubble or switch to full-screen WeChat.</string>
+    <string name="multiple_conversation_bubbles_title">Multiple conversation bubbles (Experimental)</string>
+    <string name="multiple_conversation_bubbles_description">Keep one trampoline bubble per eligible conversation. Each bubble uses that conversation’s latest WeChat notification action.</string>
     <string name="bubble_trampoline_locked_description">Finish required notification setup to enable</string>
     <string name="bubble_trampoline_bubbles_required_description">Turn on Chat bubbles to configure</string>
     <string name="bubble_trampoline_system_required_description">Allow bubbles in Android settings first</string>

@@ -39,6 +39,8 @@
     <string name="bubble_trampoline_description">在泡泡內開啟微信；通知列中仍可能出現一則重複通知</string>
     <string name="bubble_conversation_bridge_title">精確開啟對話（實驗性）</string>
     <string name="bubble_conversation_bridge_description">在泡泡內轉送最新微信通知入口；可能離開泡泡或切換至全螢幕微信。</string>
+    <string name="multiple_conversation_bubbles_title">多對話泡泡（實驗性）</string>
+    <string name="multiple_conversation_bubbles_description">為每個符合條件的對話保留一個跳板泡泡；每個泡泡使用該對話最新的微信通知入口。</string>
     <string name="bubble_trampoline_locked_description">完成必要的通知設定後可開啟</string>
     <string name="bubble_trampoline_bubbles_required_description">開啟聊天泡泡後可設定</string>
     <string name="bubble_trampoline_system_required_description">請先在 Android 設定中允許泡泡</string>

@@ -22,6 +22,7 @@ public final class BubbleDismissReceiver extends BroadcastReceiver {
 
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager != null) manager.cancel(notificationId);
+        TrampolineBubbleSessionState.onConversationHostDismissed(conversationId);
         ConversationBubbleStore.remove(conversationId);
         WeChatNotificationService.forgetPersistedReplacementsForReplacementId(
                 context,

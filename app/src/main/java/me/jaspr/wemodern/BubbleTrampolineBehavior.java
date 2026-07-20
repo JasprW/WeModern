@@ -9,6 +9,8 @@ final class BubbleTrampolineBehavior {
     private static final String OPEN_WECHAT_IN_BUBBLE = "open_wechat_in_bubble";
     private static final String OPEN_CONVERSATION_WITH_BRIDGE_EXPERIMENTAL =
             "open_conversation_with_bridge_experimental";
+    private static final String MULTIPLE_CONVERSATION_BUBBLES_EXPERIMENTAL =
+            "multiple_conversation_bubbles_experimental";
     private static final String LEGACY_TEST_MESSAGE_OPENS_WECHAT = "test_message_opens_wechat";
 
     private BubbleTrampolineBehavior() {
@@ -60,6 +62,37 @@ final class BubbleTrampolineBehavior {
                 .apply();
     }
 
+    static boolean isMultipleConversationBubblesEnabled(Context context) {
+        if (!isSupported(Build.VERSION.SDK_INT)) return false;
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean(MULTIPLE_CONVERSATION_BUBBLES_EXPERIMENTAL, false);
+    }
+
+    static void setMultipleConversationBubblesEnabled(Context context, boolean enabled) {
+        boolean storedEnabled = shouldStoreMultipleConversationBubblesPreference(
+                enabled,
+                isSupported(Build.VERSION.SDK_INT)
+        );
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(
+                        MULTIPLE_CONVERSATION_BUBBLES_EXPERIMENTAL,
+                        storedEnabled
+                )
+                .apply();
+        if (!storedEnabled) {
+            TrampolineBubbleSessionState.onIndependentHostsCleared();
+        }
+    }
+
+    static boolean shouldUseMultipleConversationBubbles(Context context) {
+        return shouldUseMultipleConversationBubbles(
+                isEnabled(context),
+                isConversationBridgeEnabled(context),
+                isMultipleConversationBubblesEnabled(context)
+        );
+    }
+
     static boolean shouldStoreEnabledPreference(boolean enabled, boolean supported) {
         return enabled && supported;
     }
@@ -71,16 +104,34 @@ final class BubbleTrampolineBehavior {
         return enabled && supported;
     }
 
+    static boolean shouldStoreMultipleConversationBubblesPreference(
+            boolean enabled,
+            boolean supported
+    ) {
+        return enabled && supported;
+    }
+
+    static boolean shouldUseMultipleConversationBubbles(
+            boolean trampolineEnabled,
+            boolean conversationBridgeEnabled,
+            boolean multipleConversationBubblesEnabled
+    ) {
+        return trampolineEnabled
+                && conversationBridgeEnabled
+                && multipleConversationBubblesEnabled;
+    }
+
     static boolean shouldOpenWeChatHome(String conversationId, boolean enabled) {
         return enabled && conversationId != null;
     }
 
     static boolean shouldPreserveMessageReplacement(
             boolean enabled,
-            boolean hasConversation
+            boolean hasActiveBubbleHost
     ) {
-        // The trampoline task is owned by a dedicated host notification. Ordinary rewritten
-        // messages can therefore follow synchronous removal in every mode.
-        return false;
+        // In multi-conversation mode the rewritten notification is the bubble host. Keep that
+        // host when WeChat marks one or more source messages read during an embedded launch.
+        // The bubble dismissal callback remains responsible for explicit removal.
+        return enabled && hasActiveBubbleHost;
     }
 }

@@ -208,10 +208,12 @@ final class NotificationChannels {
             allConversationsAllowed = bubbleReady;
         }
         boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
-        boolean hostBubbleAllowed = trampolineEnabled && isBubbleHostBubbleAllowed(context);
+        boolean dedicatedHostEnabled = trampolineEnabled
+                && !BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(context);
+        boolean hostBubbleAllowed = dedicatedHostEnabled && isBubbleHostBubbleAllowed(context);
         return isQuietBubblePresentationReady(
                 bubbleReady,
-                trampolineEnabled,
+                dedicatedHostEnabled,
                 allConversationsAllowed,
                 hostBubbleAllowed
         );

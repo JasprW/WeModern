@@ -10,8 +10,9 @@ notifications with the notification features available on modern Android.
   links back to each chat.
 - Adds one native Android chat bubble per WeChat conversation on Android 10 and
   later. Each resizable bubble keeps recent messages visible. An experimental
-  option instead keeps one bubble for the latest conversation and opens WeChat
-  Home directly as that bubble's content.
+  trampoline instead keeps one bubble for the latest conversation and opens
+  WeChat inside it; a nested default-off experiment restores one exact bridge
+  bubble per eligible conversation.
 - Rebuilds incoming WeChat voice and video calls as native `CallStyle`
   notifications that keep ringing and vibrating until handled, then switches
   the same notification to a silent, promoted ongoing `CallStyle` with elapsed
@@ -60,6 +61,13 @@ regular mode it requires Android to allow all conversations. When bubbles are
 off or unavailable, messages return to the alerting channel. Conversation notifications request
 full lock-screen visibility by default; the user's Android notification and
 lock-screen settings remain authoritative.
+With both exact bridging and **Multiple conversation bubbles (Experimental)**
+enabled, the fixed host is replaced by each eligible rewritten conversation
+notification. Different conversations can therefore keep separate Bridge tasks,
+while later messages in the same conversation update that Bubble. This path
+requires real WeChat Activity notification actions, remains subject to Android's
+per-conversation Bubble permission and WeChat task reuse, and is still awaiting
+two-conversation device validation.
 WeModern's own Chat bubbles switch controls whether
 rewritten notifications include bubble metadata; Android separately controls
 whether all or only selected conversations may bubble. When the WeModern switch
@@ -160,6 +168,13 @@ unread state instead of opening WeChat automatically. When the Message test
 successfully updates the trampoline host, it does not also retain notification
 ID `100`; this keeps the test path consistent with a real replacement after its
 source notification has been removed.
+
+Enabling **Open exact conversation (Experimental)** reveals **Multiple
+conversation bubbles (Experimental)**. The latter changes the fixed latest-chat
+host into one host per eligible conversation; it does not create a new Bubble
+for every individual message. With Android set to Selected conversations, each
+conversation may need to be allowed separately. Selecting All conversations is
+the path that also permits the low-importance quiet message channel.
 
 To enable synchronous removal of rewritten WeChat notifications when WeChat
 cancels its original notification, also grant log access and enable debug

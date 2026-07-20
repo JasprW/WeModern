@@ -1,42 +1,106 @@
 package me.jaspr.wemodern;
 
-/** Tracks the Android task currently owned by the trampoline bubble. */
-final class TrampolineBubbleSessionState {
-    private static final int NO_TASK = -1;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
-    private static volatile int embeddedTaskId = NO_TASK;
+/** Tracks Android tasks currently owned by trampoline bubbles. */
+final class TrampolineBubbleSessionState {
+    private static final Map<Integer, Session> EMBEDDED_SESSIONS = new HashMap<>();
 
     private TrampolineBubbleSessionState() {
     }
 
-    static void onEmbeddedLaunchStarted(int taskId) {
-        embeddedTaskId = taskId;
+    static synchronized void onEmbeddedLaunchStarted(int taskId) {
+        onEmbeddedLaunchStarted(taskId, null, false);
     }
 
-    static boolean isEmbeddedSessionActive() {
-        return embeddedTaskId != NO_TASK;
+    static synchronized void onEmbeddedLaunchStarted(
+            int taskId,
+            String conversationId,
+            boolean independentHost
+    ) {
+        if (taskId < 0) return;
+        EMBEDDED_SESSIONS.put(taskId, new Session(conversationId, independentHost));
     }
 
-    static boolean isEmbeddedTask(int taskId) {
-        return taskId != NO_TASK && embeddedTaskId == taskId;
+    static synchronized boolean isEmbeddedSessionActive() {
+        return !EMBEDDED_SESSIONS.isEmpty();
     }
 
-    static boolean onTaskRemoved(int taskId) {
-        if (!isEmbeddedTask(taskId)) return false;
-        embeddedTaskId = NO_TASK;
-        return true;
+    static synchronized boolean isEmbeddedTask(int taskId) {
+        return EMBEDDED_SESSIONS.containsKey(taskId);
+    }
+
+    static synchronized boolean isEmbeddedConversation(String conversationId) {
+        if (conversationId == null || conversationId.isEmpty()) return false;
+        for (Session session : EMBEDDED_SESSIONS.values()) {
+            if (conversationId.equals(session.conversationId)) return true;
+        }
+        return false;
+    }
+
+    static synchronized boolean isIndependentHostTask(int taskId) {
+        Session session = EMBEDDED_SESSIONS.get(taskId);
+        return session != null && session.independentHost;
+    }
+
+    static synchronized boolean onTaskRemoved(int taskId) {
+        return EMBEDDED_SESSIONS.remove(taskId) != null;
+    }
+
+    static synchronized void onConversationHostDismissed(String conversationId) {
+        if (conversationId == null || conversationId.isEmpty()) return;
+        Iterator<Map.Entry<Integer, Session>> iterator =
+                EMBEDDED_SESSIONS.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Session session = iterator.next().getValue();
+            if (session.independentHost && conversationId.equals(session.conversationId)) {
+                iterator.remove();
+            }
+        }
+    }
+
+    static synchronized void onIndependentHostsCleared() {
+        Iterator<Map.Entry<Integer, Session>> iterator =
+                EMBEDDED_SESSIONS.entrySet().iterator();
+        while (iterator.hasNext()) {
+            if (iterator.next().getValue().independentHost) iterator.remove();
+        }
     }
 
     /** Stops an intentionally replaced host task from clearing its successor. */
-    static void onHostReplaced() {
-        embeddedTaskId = NO_TASK;
+    static synchronized void onHostReplaced() {
+        clearSharedHostSessions();
     }
 
-    static void onHostCleared() {
-        embeddedTaskId = NO_TASK;
+    static synchronized void onHostCleared() {
+        clearSharedHostSessions();
     }
 
-    static void resetForTest() {
-        embeddedTaskId = NO_TASK;
+    static synchronized void onAllHostsCleared() {
+        EMBEDDED_SESSIONS.clear();
+    }
+
+    static synchronized void resetForTest() {
+        EMBEDDED_SESSIONS.clear();
+    }
+
+    private static void clearSharedHostSessions() {
+        Iterator<Map.Entry<Integer, Session>> iterator =
+                EMBEDDED_SESSIONS.entrySet().iterator();
+        while (iterator.hasNext()) {
+            if (!iterator.next().getValue().independentHost) iterator.remove();
+        }
+    }
+
+    private static final class Session {
+        final String conversationId;
+        final boolean independentHost;
+
+        Session(String conversationId, boolean independentHost) {
+            this.conversationId = conversationId;
+            this.independentHost = independentHost;
+        }
     }
 }

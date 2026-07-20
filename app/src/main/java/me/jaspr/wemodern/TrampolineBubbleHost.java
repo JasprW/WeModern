@@ -136,6 +136,9 @@ final class TrampolineBubbleHost {
             PendingIntent sourceConversationIntent
     ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false;
+        if (BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(context)) {
+            return false;
+        }
         boolean chatBubblesReady = ChatBubbleBehavior.isReady(
                 ChatBubbleBehavior.isEnabled(context),
                 ChatBubbleBehavior.isSystemAllowed(context)
@@ -262,6 +265,10 @@ final class TrampolineBubbleHost {
     @TargetApi(29)
     static void syncFromActive(Context context, StatusBarNotification[] active) {
         if (active == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return;
+        if (BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(context)) {
+            clear(context);
+            return;
+        }
         StatusBarNotification newest = null;
         long newestPostTime = Long.MIN_VALUE;
         for (StatusBarNotification sbn : active) {

@@ -18,6 +18,8 @@ public final class TrampolineBridgeActivity extends Activity {
     private static final String WECHAT_PACKAGE = "com.tencent.mm";
     private static final String EXTRA_TARGET =
             "me.jaspr.wemodern.extra.TRAMPOLINE_BRIDGE_TARGET";
+    private static final String EXTRA_CONVERSATION_ID =
+            "me.jaspr.wemodern.extra.TRAMPOLINE_BRIDGE_CONVERSATION_ID";
     private static final int REQUEST_CODE_NAMESPACE = 0x45000000;
 
     private boolean targetLaunchSubmitted;
@@ -89,7 +91,8 @@ public final class TrampolineBridgeActivity extends Activity {
                         "wemodern://trampoline-bridge/host/"
                                 + Integer.toUnsignedString(conversationHash(conversationId), 16)
                 ))
-                .putExtra(EXTRA_TARGET, target);
+                .putExtra(EXTRA_TARGET, target)
+                .putExtra(EXTRA_CONVERSATION_ID, conversationId);
         return PendingIntent.getActivity(
                 context,
                 requestCodeFor(conversationId),
@@ -144,10 +147,19 @@ public final class TrampolineBridgeActivity extends Activity {
         }
 
         int taskId = getTaskId();
-        TrampolineBubbleSessionState.onEmbeddedLaunchStarted(taskId);
+        String conversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID);
+        boolean independentHost =
+                BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(this);
+        TrampolineBubbleSessionState.onEmbeddedLaunchStarted(
+                taskId,
+                conversationId,
+                independentHost
+        );
         BubbleLaunchCleanup.suppressAppCancelForTrampolineLaunch(this);
         Log.i(TAG, "forwarding WeChat conversation from trampoline bubble"
                 + ", taskId=" + taskId
+                + ", conversation=" + conversationId
+                + ", independentHost=" + independentHost
                 + ", immutable=" + target.isImmutable()
                 + ", persistentBridgeRoot=true");
 
@@ -167,7 +179,7 @@ public final class TrampolineBridgeActivity extends Activity {
         } catch (IntentSender.SendIntentException | RuntimeException e) {
             Log.w(TAG, "failed to forward WeChat conversation inside trampoline bubble", e);
             resetLaunchState();
-            TrampolineBubbleSessionState.onHostCleared();
+            TrampolineBubbleSessionState.onTaskRemoved(taskId);
             BubbleLaunchCleanup.clearAppCancelSuppression(this);
             WeChatLauncher.openFromBubbleFallback(this);
         }

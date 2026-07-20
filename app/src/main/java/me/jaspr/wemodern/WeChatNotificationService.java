@@ -298,6 +298,14 @@ public class WeChatNotificationService extends NotificationListenerService {
         String conversationKey = originalToConversation.get(key);
         if (conversationKey != null) {
             originalToConversation.remove(key);
+            if (shouldPreserveMessageReplacement(conversationKey)) {
+                forgetReplacement(CancelEventKey.from(sbn));
+                Log.i(TAG, "preserve multi-conversation bubble host after original removal"
+                        + ", key=" + key
+                        + ", conversation=" + conversationKey
+                        + ", reason=" + reasonName(reason));
+                return;
+            }
             histories.remove(conversationKey);
             ConversationBubbleStore.remove(conversationKey);
             ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).cancel(stableId(conversationKey));
@@ -347,6 +355,13 @@ public class WeChatNotificationService extends NotificationListenerService {
         replacementsByCancelEvent.remove(eventKey);
         removePersistedReplacement(eventKey);
         originalToConversation.remove(replacement.originalKey);
+        if (shouldPreserveMessageReplacement(replacement.conversationKey)) {
+            Log.i(TAG, "preserve multi-conversation bubble host after app cancel log"
+                    + ", key=" + replacement.originalKey
+                    + ", conversation=" + replacement.conversationKey
+                    + ", reason=" + reasonName(reason));
+            return;
+        }
         if (replacement.conversationKey != null) {
             histories.remove(replacement.conversationKey);
             ConversationBubbleStore.remove(replacement.conversationKey);
@@ -385,13 +400,57 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
         if (event.type != NotificationCancelLogWatcher.ActivityEvent.TYPE_TASK_REMOVED) return;
         WeChatForegroundState.onTaskRemoved(event.taskId);
+        boolean independentHost =
+                TrampolineBubbleSessionState.isIndependentHostTask(event.taskId);
         if (TrampolineBubbleSessionState.onTaskRemoved(event.taskId)) {
+            if (independentHost) {
+                Log.i(TAG, "released independent trampoline bubble task"
+                        + ", taskId=" + event.taskId);
+                return;
+            }
             mainHandler.post(() -> {
                 Log.i(TAG, "clearing trampoline host after bubble task removed"
                         + ", taskId=" + event.taskId);
                 TrampolineBubbleHost.clear(this);
             });
         }
+    }
+
+    private boolean shouldPreserveMessageReplacement(String conversationKey) {
+        return BubbleTrampolineBehavior.shouldPreserveMessageReplacement(
+                BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(this),
+                isActiveMultiConversationBubbleHost(conversationKey)
+        );
+    }
+
+    private boolean isActiveMultiConversationBubbleHost(String conversationKey) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false;
+        if (conversationKey == null || conversationKey.isEmpty()) return false;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) return false;
+        StatusBarNotification[] active;
+        try {
+            active = manager.getActiveNotifications();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to inspect active multi-conversation bubble hosts", e);
+            return false;
+        }
+        if (active == null) return false;
+        int expectedNotificationId = stableId(conversationKey);
+        for (StatusBarNotification sbn : active) {
+            Notification notification = sbn.getNotification();
+            if (ConversationBubbles.isActiveMultiConversationHost(
+                    sbn.getId(),
+                    expectedNotificationId,
+                    notification.getShortcutId(),
+                    conversationKey,
+                    notification.getBubbleMetadata() != null,
+                    (notification.flags & Notification.FLAG_BUBBLE) != 0
+            )) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean handleCapturedCallRemoval(StatusBarNotification sbn, int reason) {

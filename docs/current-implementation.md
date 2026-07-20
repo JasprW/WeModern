@@ -46,9 +46,13 @@ Android 12（API 31）及以上可启用 trampoline 模式。它使用固定 lon
 
 trampoline 下另提供默认关闭的“精确打开会话（实验性）”开关。开启后，host 以 non-exported、可嵌入的 `TrampolineBridgeActivity` 作为 mutable Bubble task 根，再原样转发最新微信消息通知的 Activity `contentIntent`；只接受创建方为 `com.tencent.mm` 的目标。Bridge 不再 `finish()` 或使用 `noHistory`，微信对话返回到 Bridge 时由它把 task 移到后台，以收起而非删除 Bubble；再次展开时重新转发当前目标。Pixel 9 Pro / API 37 证明直接启动能把微信 `ChattingMainUI` 留在同一个 multi-window task，也证明尝试预置微信 Home 会被微信复用到独立全屏 task，无法作为 Bubble 根。不同会话到达时，host 在两个自有通知 ID 间交替并更换 bridge PendingIntent 身份，先发布继任者再取消旧 host，从而让 SystemUI 销毁旧 TaskView；旧 task 的移除事件不会清掉新 host。同会话更新保持当前 task。由于 WeModern 不能改写 immutable token 的内部 task flags，其他系统或微信版本仍可能跳到全屏微信；目标缺失、无效、已取消或进程重建后无法恢复时会回退微信 Home。证据和验收项见 [Trampoline PendingIntent bridge](explorations/2026-07-20-trampoline-pending-intent-bridge.md)。
 
+精确桥接下还提供默认关闭的“多会话气泡（实验性）”。开启后不再发布固定 host，而由每条合资格的普通会话替换通知直接承载自己的 Bridge BubbleMetadata；稳定的 per-conversation 通知 ID、shortcut、LocusId、Bridge URI 与 PendingIntent identity 共同把不同会话拆成独立 document task。同一会话的新消息只更新原 Bubble，不为每条消息无限新增 Bubble。Bridge session 以 task ID 和会话 ID 并行跟踪；移除一个独立 task 不会清理其他会话，固定 host 的清理也不会误删独立 session。微信在进入聊天后会批量撤销多个源通知；嵌入 session 期间，所有仍带 BubbleMetadata、匹配 shortcut 且被系统标记为 `FLAG_BUBBLE` 的活动会话替换都会继续作为 host 保留，避免点开最后一个时关闭前面的 Bubble。未真正成为 Bubble 的普通通知继续同步删除；用户显式拖走 Bubble、打开全屏微信或关闭功能也仍会清理。Pixel 9 Pro / API 37 已确认真实群聊替换以普通会话 ID、有效 shortcut、`isBubble=true` 和低重要性静音 channel 发布，且没有重新创建固定 host；真机日志也确认打开会话时微信连续撤销 `id=4097…4101`，据此修正了多 host 保护范围。该路径仍待修复版本上的双会话并存、切换、Back 收起和新消息重定向复验，当前应视为实验能力。设计与风险见 [多会话 Trampoline Bubble](explorations/2026-07-21-multi-conversation-trampoline-bubbles.md)。
+
 host 与普通消息分离且不属于消息分组，因此普通替换通知仍可被同步移除，host 不会因原通知消失而被误删。新消息只更新这个 host；关闭 trampoline 时恢复常规模式，关闭 Chat bubbles 时只移除当前 host 并保留 trampoline 偏好，重新开启 Chat bubbles 后自动恢复。host 使用独立的静默、最小化通道，降低额外状态栏图标、文字 heads-up、声音或振动的干扰。
 
 Android 11 及以上不接受应用通过 `NotificationChannel.setAllowBubbles(true)` 默认替用户开启气泡。系统选择“所有会话”时 host 可直接成为气泡；选择“仅所选会话”时，用户必须在 host 通知上点一次气泡按钮。开启 trampoline 而 host 尚未获准时会立即打开 Android 气泡设置，便于选择“所有会话”；设置页也会读取 app-level bubble preference 与 host conversation channel 的 `canBubble()`，在两者均未允许时显示这一必要操作，并将 host 卡片点击导向 Android 气泡设置。平台证据与边界见 [Bubble channel 初始化调查](explorations/2026-07-20-bubble-channel-initialization.md)。
+
+多会话实验不使用固定 host channel，因此开启后隐藏该 channel 的优化卡片。Android 选择“所有会话”时，每个合资格会话可直接使用低重要性静音消息 channel；选择“仅所选会话”时仍保留高重要性 parent channel，以免迁移 parent channel 丢失各会话自己的 Bubble 许可，此时用户需分别允许目标会话且仍可能看到普通 heads-up。
 
 为处理微信 task 生命周期，应用结合 activity 日志跟踪嵌入任务：仅在实际 bubble task 移除时清除 host，避免普通微信前台切换、通知移除或新会话更新错误关闭气泡。
 
@@ -98,7 +102,7 @@ Message 测试通知 ID 为 `100`，小图标必须是 `R.drawable.ic_wechat_not
 | --- | --- |
 | 重复 listener 回调会重复重写/堆积历史 | `NotificationPostDeduplicator` 按通知 key、post time 和 `when` 去重。 |
 | Android 12+ bubble 启动缺少嵌入任务选项 | bubble Activity `PendingIntent` 使用 mutable flag，删除回调保持 immutable。 |
-| 多个 trampoline 会话互相结束 WeChat task | 以固定 host 替代每会话 host，永远只维护一个最新会话 bubble。 |
+| 多个 trampoline 会话互相结束 WeChat task | 默认继续使用单一固定 host；显式开启多会话实验时，使用独立会话通知 host、document Bridge task 与按 task / 会话隔离的 session 状态。 |
 | 原通知移除误杀 trampoline bubble | host 不加入消息分组、不参与 replacement 映射，并按嵌入 task 移除事件清理。 |
 | 气泡关闭后普通通知仍静默 | 依据全局准备状态和会话策略切换 quiet/alerting message channel。 |
 | 群聊头像误用于其他会话/发送者 | 快捷方式图标按会话缓存，避免复用群聊发送者头像。 |

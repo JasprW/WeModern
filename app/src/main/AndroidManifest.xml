@@ -64,6 +64,7 @@
         <activity
             android:name=".TrampolineBridgeActivity"
             android:allowEmbedded="true"
+            android:documentLaunchMode="always"
             android:excludeFromRecents="true"
             android:exported="false"
             android:resizeableActivity="true"

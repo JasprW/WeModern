@@ -35,14 +35,18 @@ final class WeChatLauncher {
     }
 
     static boolean openFromBubbleFallback(Activity activity) {
-        TrampolineBubbleSessionState.onEmbeddedLaunchStarted(activity.getTaskId());
+        TrampolineBubbleSessionState.onEmbeddedLaunchStarted(
+                activity.getTaskId(),
+                null,
+                BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(activity)
+        );
         BubbleLaunchCleanup.suppressAppCancelForTrampolineLaunch(activity);
         // This path is used only if SystemUI restores the conversation shortcut intent instead
         // of the BubbleMetadata PendingIntent. Let WeChat replace the fallback Activity as root.
         activity.finish();
         boolean opened = open(activity, true, false, false);
         if (!opened) {
-            TrampolineBubbleSessionState.onHostCleared();
+            TrampolineBubbleSessionState.onTaskRemoved(activity.getTaskId());
             BubbleLaunchCleanup.clearAppCancelSuppression(activity);
         }
         return opened;

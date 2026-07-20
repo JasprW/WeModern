@@ -69,6 +69,20 @@ public class ConversationBubblesTest {
     }
 
     @Test
+    public void multipleConversationTrampolineNeedsExactConversationData() {
+        assertTrue(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
+                37, true, true, true, true, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
+                30, true, true, true, true, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
+                37, true, true, false, true, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
+                37, true, true, true, false, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
+                37, true, true, true, true, true, true, false));
+    }
+
+    @Test
     public void bubbleNotificationsStayCollapsedAndExposeTheirNotification() {
         assertFalse(ConversationBubbles.shouldAutoExpand());
         assertFalse(ConversationBubbles.shouldSuppressNotification());
@@ -94,5 +108,19 @@ public class ConversationBubblesTest {
                 true, "wechat:alice", false, true, false));
         assertFalse(ConversationBubbles.shouldUpdateActiveNotification(
                 true, "wechat:alice", true, false, false));
+    }
+
+    @Test
+    public void activeMultiConversationHostRequiresExactBubbledNotification() {
+        assertTrue(ConversationBubbles.isActiveMultiConversationHost(
+                42, 42, "wechat:alice", "wechat:alice", true, true));
+        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+                41, 42, "wechat:alice", "wechat:alice", true, true));
+        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+                42, 42, "wechat:bob", "wechat:alice", true, true));
+        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+                42, 42, "wechat:alice", "wechat:alice", false, true));
+        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+                42, 42, "wechat:alice", "wechat:alice", true, false));
     }
 }
