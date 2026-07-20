@@ -37,6 +37,8 @@
     <string name="bubble_no_messages">沒有最近訊息</string>
     <string name="bubble_trampoline_title">泡泡跳板</string>
     <string name="bubble_trampoline_description">在泡泡內開啟微信；通知列中仍可能出現一則重複通知</string>
+    <string name="bubble_conversation_bridge_title">精確開啟對話（實驗性）</string>
+    <string name="bubble_conversation_bridge_description">在泡泡內轉送最新微信通知入口；可能離開泡泡或切換至全螢幕微信。</string>
     <string name="bubble_trampoline_locked_description">完成必要的通知設定後可開啟</string>
     <string name="bubble_trampoline_bubbles_required_description">開啟聊天泡泡後可設定</string>
     <string name="bubble_trampoline_system_required_description">請先在 Android 設定中允許泡泡</string>
@@ -44,6 +46,7 @@
     <string name="bubble_host_channel_optimization_recommendation">弱化泡泡宿主通知的存在感，減少干擾並優化體驗</string>
     <string name="bubble_host_channel_optimized_description">泡泡宿主通知已設為「靜音」並「最小化」</string>
     <string name="bubble_host_channel_disabled_description">泡泡宿主通知已關閉；請重新開啟，以便泡泡正常啟動及更新。</string>
+    <string name="bubble_host_bubble_required_description">Android 目前只允許所選對話使用泡泡。請選擇允許全部對話，或在宿主通知上點選一次泡泡按鈕。</string>
     <string name="bubble_defaults_title">對話設定</string>
     <string name="bubble_defaults_description">設定私人與群組對話的預設泡泡行為，並可按需覆寫特定對話。</string>
     <string name="bubble_default_private_title">私人對話</string>
@@ -171,11 +174,10 @@
     <string name="call_action_hang_up">掛斷</string>
     <string name="channel_wechat_messages">微信訊息</string>
     <string name="channel_wechat_messages_description">重寫後的微信訊息通知</string>
-    <string name="channel_wechat_bubble_mode_conversations">微信對話通知</string>
-    <string name="channel_wechat_bubble_mode_conversations_description">開啟聊天泡泡時，每個微信對話各自顯示的低干擾訊息通知</string>
+    <string name="channel_wechat_bubbled_messages">微信泡泡訊息</string>
+    <string name="channel_wechat_bubbled_messages_description">泡泡可用時靜默顯示重寫後的微信訊息</string>
     <string name="channel_wechat_bubble_host">微信泡泡宿主通知</string>
     <string name="channel_wechat_bubble_host_description">用於啟動及更新微信泡泡。預設靜音並最小化；請保持通知開啟。</string>
-    <string name="channel_status">狀態</string>
     <string name="channel_wechat_incoming_calls">微信來電提醒</string>
     <string name="channel_wechat_incoming_calls_description">收到微信語音或視像通話邀請時響鈴並震動</string>
     <string name="channel_wechat_ongoing_calls">微信通話中</string>

@@ -181,7 +181,11 @@ class MainActivity : ComponentActivity() {
                     onRequestNotifications = { requestPostNotifications() },
                     onOpenChatBubbleSettings = { openChatBubbleSettings() },
                     onOpenBubbleHostChannelSettings = {
-                        openBubbleHostChannelSettings()
+                        if (NotificationChannels.isBubbleHostBubbleAllowed(this)) {
+                            openBubbleHostChannelSettings()
+                        } else {
+                            openChatBubbleSettings()
+                        }
                     },
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
@@ -206,6 +210,17 @@ class MainActivity : ComponentActivity() {
                         BubbleTrampolineBehavior.setEnabled(
                             this,
                             enabled && setupState.bubbleTrampolineCanBeSet,
+                        )
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                        if (enabled && !setupState.bubbleHostCanBubble) {
+                            openChatBubbleSettings()
+                        }
+                    },
+                    onSetBubbleConversationBridgeEnabled = { enabled ->
+                        BubbleTrampolineBehavior.setConversationBridgeEnabled(
+                            this,
+                            enabled && setupState.bubbleTrampolineEnabled,
                         )
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
@@ -308,10 +323,13 @@ class MainActivity : ComponentActivity() {
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
             bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
+            bubbleConversationBridgeEnabled =
+                BubbleTrampolineBehavior.isConversationBridgeEnabled(this),
             bubbleHostNotificationMinimized =
                 NotificationChannels.isBubbleHostNotificationMinimized(this),
             bubbleHostNotificationsDisabled =
                 NotificationChannels.areBubbleHostNotificationsDisabled(this),
+            bubbleHostCanBubble = NotificationChannels.isBubbleHostBubbleAllowed(this),
             chatBubblesEnabled = chatBubblesEnabled,
             chatBubblesSystemAllowed = chatBubblesSystemAllowed,
             defaultPrivateBubblesEnabled =
@@ -581,6 +599,7 @@ class MainActivity : ComponentActivity() {
                 MessageTestNotifications.SHORTCUT_ID,
                 getString(R.string.test_message_sender),
                 senderAvatar,
+                contentIntent,
             )
         } else {
             false
@@ -612,8 +631,10 @@ private data class SetupState(
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
     val bubbleTrampolineEnabled: Boolean = false,
+    val bubbleConversationBridgeEnabled: Boolean = false,
     val bubbleHostNotificationMinimized: Boolean = false,
     val bubbleHostNotificationsDisabled: Boolean = false,
+    val bubbleHostCanBubble: Boolean = false,
     val chatBubblesEnabled: Boolean = false,
     val chatBubblesSystemAllowed: Boolean = false,
     val defaultPrivateBubblesEnabled: Boolean = true,
@@ -714,6 +735,7 @@ private fun WeModernApp(
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
+    onSetBubbleConversationBridgeEnabled: (Boolean) -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
     onSetConversationSortOrder: (ConversationBubblePreferences.SortOrder) -> Unit,
@@ -817,6 +839,8 @@ private fun WeModernApp(
                         state = state,
                         onSetChatBubblesEnabled = onSetChatBubblesEnabled,
                         onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
+                        onSetBubbleConversationBridgeEnabled =
+                            onSetBubbleConversationBridgeEnabled,
                         onOpenBubbleHostChannelSettings = onOpenBubbleHostChannelSettings,
                         onSetDefaultPrivateBubblesEnabled =
                             onSetDefaultPrivateBubblesEnabled,
@@ -1541,6 +1565,7 @@ private fun LazyListScope.bubbleSectionItems(
     state: SetupState,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
+    onSetBubbleConversationBridgeEnabled: (Boolean) -> Unit,
     onOpenBubbleHostChannelSettings: () -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
@@ -1604,6 +1629,25 @@ private fun LazyListScope.bubbleSectionItems(
     }
     if (state.bubbleTrampolineAvailable) {
         animatedSettingsPageItem(
+            key = "bubble_conversation_bridge_experimental",
+            contentType = "switch_card",
+            visible = state.chatBubblesReady && state.bubbleTrampolineEnabled,
+            spacingAfter = 8.dp,
+        ) {
+            SettingsSwitchCard(
+                title = stringResource(R.string.bubble_conversation_bridge_title),
+                supporting = stringResource(
+                    R.string.bubble_conversation_bridge_description,
+                ),
+                icon = Icons.Rounded.TouchApp,
+                checked = state.bubbleConversationBridgeEnabled,
+                enabled = state.bubbleTrampolineEnabled,
+                onCheckedChange = onSetBubbleConversationBridgeEnabled,
+            )
+        }
+    }
+    if (state.bubbleTrampolineAvailable) {
+        animatedSettingsPageItem(
             key = "bubble_host_channel",
             contentType = "action_card",
             visible = state.chatBubblesReady && state.bubbleTrampolineEnabled,
@@ -1656,11 +1700,14 @@ private fun BubbleHostChannelCard(state: SetupState, onClick: () -> Unit) {
                 Text(
                     text = stringResource(
                         when {
-                            state.bubbleHostNotificationMinimized -> {
-                                R.string.bubble_host_channel_optimized_description
-                            }
                             state.bubbleHostNotificationsDisabled -> {
                                 R.string.bubble_host_channel_disabled_description
+                            }
+                            !state.bubbleHostCanBubble -> {
+                                R.string.bubble_host_bubble_required_description
+                            }
+                            state.bubbleHostNotificationMinimized -> {
+                                R.string.bubble_host_channel_optimized_description
                             }
                             else -> R.string.bubble_host_channel_optimization_recommendation
                         }
@@ -1670,13 +1717,17 @@ private fun BubbleHostChannelCard(state: SetupState, onClick: () -> Unit) {
                 )
             }
             Icon(
-                imageVector = if (state.bubbleHostNotificationMinimized) {
+                imageVector = if (
+                    state.bubbleHostCanBubble && state.bubbleHostNotificationMinimized
+                ) {
                     Icons.Rounded.CheckCircle
                 } else {
                     Icons.Rounded.ChevronRight
                 },
                 contentDescription = null,
-                tint = if (state.bubbleHostNotificationMinimized) {
+                tint = if (
+                    state.bubbleHostCanBubble && state.bubbleHostNotificationMinimized
+                ) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant

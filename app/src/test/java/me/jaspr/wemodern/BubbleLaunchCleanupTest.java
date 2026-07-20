@@ -13,6 +13,9 @@ public class BubbleLaunchCleanupTest {
         assertFalse(BubbleLaunchCleanup.shouldCancel(
                 TrampolineBubbleHost.NOTIFICATION_ID,
                 true));
+        assertFalse(BubbleLaunchCleanup.shouldCancel(
+                TrampolineBubbleHost.SECONDARY_NOTIFICATION_ID,
+                true));
     }
 
     @Test

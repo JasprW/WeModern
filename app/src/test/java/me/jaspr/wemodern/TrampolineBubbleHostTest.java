@@ -12,6 +12,8 @@ public class TrampolineBubbleHostTest {
     public void hostUsesFixedIdentityOutsideExistingNotificationNamespaces() {
         assertTrue(TrampolineBubbleHost.isHostNotificationId(
                 TrampolineBubbleHost.NOTIFICATION_ID));
+        assertTrue(TrampolineBubbleHost.isHostNotificationId(
+                TrampolineBubbleHost.SECONDARY_NOTIFICATION_ID));
         assertFalse(TrampolineBubbleHost.isHostNotificationId(
                 MessageTestNotifications.CURRENT_ID));
         assertNotEquals(
@@ -47,7 +49,12 @@ public class TrampolineBubbleHostTest {
                 "wechat_alice",
                 false));
         assertTrue(TrampolineBubbleHost.isEligibleSource(
-                NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS,
+                NotificationChannels.LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS,
+                42,
+                "wechat_alice",
+                false));
+        assertTrue(TrampolineBubbleHost.isEligibleSource(
+                NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES_V2,
                 42,
                 "wechat_alice",
                 false));
@@ -81,6 +88,13 @@ public class TrampolineBubbleHostTest {
     }
 
     @Test
+    public void conversationBridgeRequiresPreferenceAndUsableIntent() {
+        assertTrue(TrampolineBubbleHost.shouldUseConversationBridge(true, true));
+        assertFalse(TrampolineBubbleHost.shouldUseConversationBridge(false, true));
+        assertFalse(TrampolineBubbleHost.shouldUseConversationBridge(true, false));
+    }
+
+    @Test
     public void fixedHostRequestCodeIsStable() {
         assertEquals(
                 TrampolineBubbleHost.requestCode(),
@@ -95,5 +109,31 @@ public class TrampolineBubbleHostTest {
         assertFalse(TrampolineBubbleHost.shouldAutoExpand());
         assertFalse(TrampolineBubbleHost.shouldSuppressNotification());
         assertFalse(TrampolineBubbleHost.shouldOnlyAlertOnce());
+    }
+
+    @Test
+    public void conversationChangeRotatesOnlyExperimentalBridgeHost() {
+        assertTrue(TrampolineBubbleHost.shouldRotateHost(
+                true, "wechat_alice", "wechat_bob", true, true));
+        assertFalse(TrampolineBubbleHost.shouldRotateHost(
+                true, "wechat_alice", "wechat_alice", true, true));
+        assertFalse(TrampolineBubbleHost.shouldRotateHost(
+                true, "wechat_alice", "wechat_bob", false, false));
+        assertTrue(TrampolineBubbleHost.shouldRotateHost(
+                true, "wechat_alice", "wechat_alice", false, true));
+        assertFalse(TrampolineBubbleHost.shouldRotateHost(
+                false, null, "wechat_alice", false, true));
+    }
+
+    @Test
+    public void rotatingHostAlternatesBetweenTwoOwnedNotificationIds() {
+        assertEquals(
+                TrampolineBubbleHost.SECONDARY_NOTIFICATION_ID,
+                TrampolineBubbleHost.alternateNotificationId(
+                        TrampolineBubbleHost.NOTIFICATION_ID));
+        assertEquals(
+                TrampolineBubbleHost.NOTIFICATION_ID,
+                TrampolineBubbleHost.alternateNotificationId(
+                        TrampolineBubbleHost.SECONDARY_NOTIFICATION_ID));
     }
 }

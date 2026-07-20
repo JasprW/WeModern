@@ -14,6 +14,22 @@ public class BubbleTrampolineBehaviorTest {
     }
 
     @Test
+    public void conversationBridgePreferenceIsExperimentalAndDisabledWhenUnsupported() {
+        assertTrue(BubbleTrampolineBehavior.shouldStoreConversationBridgePreference(
+                true,
+                true
+        ));
+        assertFalse(BubbleTrampolineBehavior.shouldStoreConversationBridgePreference(
+                true,
+                false
+        ));
+        assertFalse(BubbleTrampolineBehavior.shouldStoreConversationBridgePreference(
+                false,
+                true
+        ));
+    }
+
+    @Test
     public void enabledTestMessageOpensWeChatHome() {
         assertTrue(BubbleTrampolineBehavior.shouldOpenWeChatHome(
                 MessageTestNotifications.SHORTCUT_ID,

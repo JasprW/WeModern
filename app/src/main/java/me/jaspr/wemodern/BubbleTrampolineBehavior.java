@@ -7,6 +7,8 @@ import android.os.Build;
 final class BubbleTrampolineBehavior {
     private static final String PREFERENCES = "bubble_trampoline_behavior";
     private static final String OPEN_WECHAT_IN_BUBBLE = "open_wechat_in_bubble";
+    private static final String OPEN_CONVERSATION_WITH_BRIDGE_EXPERIMENTAL =
+            "open_conversation_with_bridge_experimental";
     private static final String LEGACY_TEST_MESSAGE_OPENS_WECHAT = "test_message_opens_wechat";
 
     private BubbleTrampolineBehavior() {
@@ -39,7 +41,33 @@ final class BubbleTrampolineBehavior {
                 .apply();
     }
 
+    static boolean isConversationBridgeEnabled(Context context) {
+        if (!isSupported(Build.VERSION.SDK_INT)) return false;
+        return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean(OPEN_CONVERSATION_WITH_BRIDGE_EXPERIMENTAL, false);
+    }
+
+    static void setConversationBridgeEnabled(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(
+                        OPEN_CONVERSATION_WITH_BRIDGE_EXPERIMENTAL,
+                        shouldStoreConversationBridgePreference(
+                                enabled,
+                                isSupported(Build.VERSION.SDK_INT)
+                        )
+                )
+                .apply();
+    }
+
     static boolean shouldStoreEnabledPreference(boolean enabled, boolean supported) {
+        return enabled && supported;
+    }
+
+    static boolean shouldStoreConversationBridgePreference(
+            boolean enabled,
+            boolean supported
+    ) {
         return enabled && supported;
     }
 

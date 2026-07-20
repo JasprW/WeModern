@@ -18,7 +18,9 @@
 
 “改写通知”开启时，`WeChatNotificationService` 作为 `NotificationListenerService` 监听 `com.tencent.mm`，识别消息和 VoIP 通知，并以 WeModern 通知替换原始通知。消息使用 `MessagingStyle`，保留会话标题、发送者头像、最多 8 条去重历史、会话 shortcut 与原始 `contentIntent`；普通消息归入 `wechat.rewritten` 分组并维护摘要通知。关闭改写会完全绕过本节行为。
 
-原始微信通知在成功重写后会被隐藏，避免并存重复内容。通知服务重连时会扫描活动通知、恢复会话入口、刷新快捷方式图标并清理孤儿替换通知。不能解析的微信通知不会被改写。
+应用只创建有实际发布者的消息、Bubble host、来电、通话中 channel。旧 `status_alerts` 原本仅服务于已移除的通用测试通知，当前没有任何生产或测试通知引用；升级初始化会删除它，不再让无效“状态”分类留在 Android 通知设置中。Pixel 9 Pro / API 37 的升级安装后，`dumpsys notification` 已确认该 channel 为 `mDeleted=true`。
+
+原始微信通知只会在 Android 已接受对应的 WeModern 消息替换后被隐藏，避免并存重复内容。如果会话状态、shortcut、头像、BubbleMetadata 或通知发布过程中出现运行时错误，服务会撤销该条 replacement 映射并保留微信原通知；原始图标发布失败时会先改用应用内安全图标重试，再回退为不带 BubbleMetadata 的普通通知。Trampoline host 和消息分组摘要属于主替换之后的 best-effort 更新，其失败不会使已经发布的消息替换失效。通知服务重连时会扫描活动通知、恢复会话入口、刷新快捷方式图标并清理孤儿替换通知。不能解析的微信通知不会被改写。
 
 ### 同步移除
 
@@ -32,15 +34,21 @@
 
 Android 10（API 29）及以上可为每个允许的会话附加 `BubbleMetadata`。气泡内容是 `BubbleConversationActivity`：显示本地最近消息快照，并通过微信原始 `PendingIntent` 打开精确聊天。气泡 activity 可嵌入、可调整大小、以 document 模式多实例启动，并可在进程重建后恢复状态。
 
-气泡依赖两层开关：Android 的全局/选中会话气泡许可，以及 WeModern 的“Chat bubbles”开关。气泡准备就绪后，允许的会话使用低重要性安静消息通道；关闭或不可用的会话走提醒通道，因而仍可显示正常消息和 heads-up。
+气泡依赖两层开关：Android 的全局/选中会话气泡许可，以及 WeModern 的“Chat bubbles”开关。Bubble 实际可展示且会话策略允许时，普通替换消息切换到 `wechat_messages_bubbled_quiet`：默认 `IMPORTANCE_LOW`、无声音、无振动，因此不会再额外显示 heads-up；关闭 Chat bubbles、会话策略禁用或系统 Bubble 不可用时，消息仍使用 `wechat_messages_alerts` 高重要性 channel。常规模式只在 Android 允许所有会话气泡时静默，避免切换 parent channel 破坏“仅所选会话”的许可；trampoline 模式则以固定 host 的实际气泡许可为准。升级时删除 v1.7.1 未做许可保护的 `wechat_messages_bubbles_quiet` 和临时使用过的 `wechat_messages_bubbles_quiet_v2`；稳定 ID 不包含版本后缀，也不复用 Android 已保存旧行为和用户设置的历史 ID。
+
+Pixel 9 Pro / API 37 的升级安装后，`dumpsys notification` 已确认稳定 `wechat_messages_bubbled_quiet` 为 importance 2、sound null、vibration disabled；旧 `wechat_messages_bubbles_quiet` 与临时 `wechat_messages_bubbles_quiet_v2` 均为 deleted。旧无后缀 ID 仍保留 importance 3、系统声音、振动和用户锁定字段，证明它不能安全复用。真实新微信消息的无 heads-up 视觉回归仍需在设备解锁后完成。
 
 会话默认按私聊和群聊分别配置；每个已知会话还可覆盖为“始终允许”或“永不允许”。会话身份由微信通知提供的标题构成（`wechat:<title>`），昵称、群名或语言变化会使旧覆盖失配；这不是微信稳定内部 ID。
 
 ### Bubble trampoline
 
-Android 12（API 31）及以上可启用 trampoline 模式。它不为每个会话创建 WeChat task，而是使用固定 ID、固定 long-lived shortcut 的独立 host 通知，只保留一个代表最新合资格会话的气泡。用户展开气泡时才把微信 Home 作为嵌入任务根启动；通知栏中仍可能同时出现一条 host 通知，设置页提供 channel 入口以降低其视觉存在感。
+Android 12（API 31）及以上可启用 trampoline 模式。它使用固定 long-lived shortcut 的独立 host 通知，只保留一个代表最新合资格会话的气泡。默认路径在用户展开气泡时把微信 Home 作为嵌入任务根启动；通知栏中仍可能同时出现一条 host 通知，设置页提供 channel 入口以降低其视觉存在感。
+
+trampoline 下另提供默认关闭的“精确打开会话（实验性）”开关。开启后，host 以 non-exported、可嵌入的 `TrampolineBridgeActivity` 作为 mutable Bubble task 根，再原样转发最新微信消息通知的 Activity `contentIntent`；只接受创建方为 `com.tencent.mm` 的目标。Bridge 不再 `finish()` 或使用 `noHistory`，微信对话返回到 Bridge 时由它把 task 移到后台，以收起而非删除 Bubble；再次展开时重新转发当前目标。Pixel 9 Pro / API 37 证明直接启动能把微信 `ChattingMainUI` 留在同一个 multi-window task，也证明尝试预置微信 Home 会被微信复用到独立全屏 task，无法作为 Bubble 根。不同会话到达时，host 在两个自有通知 ID 间交替并更换 bridge PendingIntent 身份，先发布继任者再取消旧 host，从而让 SystemUI 销毁旧 TaskView；旧 task 的移除事件不会清掉新 host。同会话更新保持当前 task。由于 WeModern 不能改写 immutable token 的内部 task flags，其他系统或微信版本仍可能跳到全屏微信；目标缺失、无效、已取消或进程重建后无法恢复时会回退微信 Home。证据和验收项见 [Trampoline PendingIntent bridge](explorations/2026-07-20-trampoline-pending-intent-bridge.md)。
 
 host 与普通消息分离且不属于消息分组，因此普通替换通知仍可被同步移除，host 不会因原通知消失而被误删。新消息只更新这个 host；关闭 trampoline 时恢复常规模式，关闭 Chat bubbles 时只移除当前 host 并保留 trampoline 偏好，重新开启 Chat bubbles 后自动恢复。host 使用独立的静默、最小化通道，降低额外状态栏图标、文字 heads-up、声音或振动的干扰。
+
+Android 11 及以上不接受应用通过 `NotificationChannel.setAllowBubbles(true)` 默认替用户开启气泡。系统选择“所有会话”时 host 可直接成为气泡；选择“仅所选会话”时，用户必须在 host 通知上点一次气泡按钮。开启 trampoline 而 host 尚未获准时会立即打开 Android 气泡设置，便于选择“所有会话”；设置页也会读取 app-level bubble preference 与 host conversation channel 的 `canBubble()`，在两者均未允许时显示这一必要操作，并将 host 卡片点击导向 Android 气泡设置。平台证据与边界见 [Bubble channel 初始化调查](explorations/2026-07-20-bubble-channel-initialization.md)。
 
 为处理微信 task 生命周期，应用结合 activity 日志跟踪嵌入任务：仅在实际 bubble task 移除时清除 host，避免普通微信前台切换、通知移除或新会话更新错误关闭气泡。
 

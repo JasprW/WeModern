@@ -19,27 +19,28 @@ public class NotificationChannelsTest {
     }
 
     @Test
-    public void onlyBubbleEligibleConversationsUseQuietChannel() {
+    public void bubbleReadyConversationsUseQuietMessageChannel() {
         assertEquals(
                 NotificationChannels.WECHAT_MESSAGES,
                 NotificationChannels.messageChannelId(false, true));
         assertEquals(
-                NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS,
+                NotificationChannels.WECHAT_BUBBLED_MESSAGES,
                 NotificationChannels.messageChannelId(true, true));
         assertEquals(
                 NotificationChannels.WECHAT_MESSAGES,
                 NotificationChannels.messageChannelId(true, false));
-        assertNotEquals(
-                NotificationChannels.WECHAT_MESSAGES,
-                NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS);
     }
 
     @Test
-    public void bothAlertingAndBubbleModeChannelsAreMessageChannels() {
+    public void alertingQuietAndLegacyConversationChannelsAreRecognizedAsMessages() {
         assertTrue(NotificationChannels.isMessageChannel(
                 NotificationChannels.WECHAT_MESSAGES));
         assertTrue(NotificationChannels.isMessageChannel(
-                NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS));
+                NotificationChannels.WECHAT_BUBBLED_MESSAGES));
+        assertTrue(NotificationChannels.isMessageChannel(
+                NotificationChannels.LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS));
+        assertTrue(NotificationChannels.isMessageChannel(
+                NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES_V2));
         assertFalse(NotificationChannels.isMessageChannel(
                 NotificationChannels.WECHAT_INCOMING_CALLS));
         assertFalse(NotificationChannels.isMessageChannel(
@@ -73,6 +74,12 @@ public class NotificationChannelsTest {
     public void incomingCallsAreHighPriorityAndOngoingCallsUseDefaultPriority() {
         assertEquals(
                 NotificationManager.IMPORTANCE_HIGH,
+                NotificationChannels.messageDefaultImportance());
+        assertEquals(
+                NotificationManager.IMPORTANCE_LOW,
+                NotificationChannels.bubbledMessageDefaultImportance());
+        assertEquals(
+                NotificationManager.IMPORTANCE_HIGH,
                 NotificationChannels.incomingCallDefaultImportance());
         assertEquals(
                 NotificationManager.IMPORTANCE_DEFAULT,
@@ -81,9 +88,6 @@ public class NotificationChannelsTest {
 
     @Test
     public void bubbleHostUsesASeparateChannelFromConversationNotifications() {
-        assertNotEquals(
-                NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS,
-                NotificationChannels.WECHAT_BUBBLE_HOST);
         assertNotEquals(
                 NotificationChannels.WECHAT_MESSAGES,
                 NotificationChannels.WECHAT_BUBBLE_HOST);
@@ -97,10 +101,50 @@ public class NotificationChannelsTest {
     }
 
     @Test
-    public void renamedConversationChannelKeepsPersistedId() {
+    public void stableQuietChannelDoesNotReuseEitherLegacyIdentity() {
         assertEquals(
                 "wechat_messages_bubbles_quiet",
-                NotificationChannels.WECHAT_BUBBLE_MODE_CONVERSATIONS);
+                NotificationChannels.LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS);
+        assertEquals(
+                "wechat_messages_bubbles_quiet_v2",
+                NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES_V2);
+        assertEquals(
+                "wechat_messages_bubbled_quiet",
+                NotificationChannels.WECHAT_BUBBLED_MESSAGES);
+        assertNotEquals(
+                NotificationChannels.LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS,
+                NotificationChannels.messageChannelId(true, true));
+        assertNotEquals(
+                NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES_V2,
+                NotificationChannels.messageChannelId(true, true));
+    }
+
+    @Test
+    public void normalBubblesBecomeQuietOnlyWhenAllConversationsCanBubble() {
+        assertTrue(NotificationChannels.isQuietBubblePresentationReady(
+                true, false, true, false));
+        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
+                true, false, false, false));
+        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
+                false, false, true, false));
+    }
+
+    @Test
+    public void trampolineBecomesQuietOnlyWhenItsHostCanBubble() {
+        assertTrue(NotificationChannels.isQuietBubblePresentationReady(
+                true, true, false, true));
+        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
+                true, true, true, false));
+        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
+                false, true, true, true));
+    }
+
+    @Test
+    public void bubbleHostIsReadyForAllConversationsOrAnAllowedHostConversation() {
+        assertTrue(NotificationChannels.isBubbleHostBubbleAllowed(true, true, false));
+        assertTrue(NotificationChannels.isBubbleHostBubbleAllowed(true, false, true));
+        assertFalse(NotificationChannels.isBubbleHostBubbleAllowed(true, false, false));
+        assertFalse(NotificationChannels.isBubbleHostBubbleAllowed(false, true, true));
     }
 
     @Test

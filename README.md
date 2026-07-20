@@ -44,11 +44,20 @@ shortcut and mutable launcher `PendingIntent`, so WeChat Home is the bubble task
 root from the beginning. New messages update that same host to the latest
 conversation instead of creating competing WeChat tasks. Ordinary rewritten
 notifications remain independently removable, including when synchronous
-removal is enabled. When bubbles are ready, ordinary message notifications use
-a low-importance quiet channel, while the fixed Bubble host uses a separate
+removal is enabled. A separate default-off experimental switch can instead keep
+a mutable WeModern bridge as the bubble task root and forward the latest
+notification's original immutable WeChat `PendingIntent`. The bridge collapses
+the task after the conversation returns, and a different latest conversation
+rotates the host identity so SystemUI replaces the previous TaskView. The
+immutable target can still leave the bubble or switch to full-screen WeChat;
+invalid or unavailable targets fall back to WeChat Home. When Bubble delivery
+is actually available, eligible ordinary message notifications use a
+low-importance quiet channel, while the fixed Bubble host uses a separate
 silent, minimized channel so SystemUI can update the bubble without adding a
-second status-bar icon, text heads-up, sound, or vibration. When bubbles are off or unavailable,
-messages return to the alerting channel. Conversation notifications request
+second status-bar icon, text heads-up, sound, or vibration. In trampoline mode,
+the quiet route requires the host conversation to be allowed to bubble; in
+regular mode it requires Android to allow all conversations. When bubbles are
+off or unavailable, messages return to the alerting channel. Conversation notifications request
 full lock-screen visibility by default; the user's Android notification and
 lock-screen settings remain authoritative.
 WeModern's own Chat bubbles switch controls whether

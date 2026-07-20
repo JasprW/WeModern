@@ -37,6 +37,8 @@
     <string name="bubble_no_messages">No recent messages</string>
     <string name="bubble_trampoline_title">Bubble trampoline</string>
     <string name="bubble_trampoline_description">Open WeChat inside the bubble; the notification shade may still show a duplicate notification</string>
+    <string name="bubble_conversation_bridge_title">Open exact conversation (Experimental)</string>
+    <string name="bubble_conversation_bridge_description">Forward the latest WeChat notification action inside the bubble. It may leave the bubble or switch to full-screen WeChat.</string>
     <string name="bubble_trampoline_locked_description">Finish required notification setup to enable</string>
     <string name="bubble_trampoline_bubbles_required_description">Turn on Chat bubbles to configure</string>
     <string name="bubble_trampoline_system_required_description">Allow bubbles in Android settings first</string>
@@ -44,6 +46,7 @@
     <string name="bubble_host_channel_optimization_recommendation">Reduce the bubble host notification’s visual prominence for a cleaner experience</string>
     <string name="bubble_host_channel_optimized_description">Bubble host notification is Silent and Minimized</string>
     <string name="bubble_host_channel_disabled_description">Bubble host notifications are off. Turn them back on so the bubble can launch and update.</string>
+    <string name="bubble_host_bubble_required_description">Android allows only selected conversations. Allow all conversations, or tap the bubble button on the host notification once.</string>
     <string name="bubble_defaults_title">Conversation settings</string>
     <string name="bubble_defaults_description">Set the default bubble behavior for private and group chats, then override specific conversations when needed.</string>
     <string name="bubble_default_private_title">Private chats</string>
@@ -173,11 +176,10 @@
     <string name="call_action_hang_up">Hang up</string>
     <string name="channel_wechat_messages">WeChat messages</string>
     <string name="channel_wechat_messages_description">Rewritten WeChat message notifications</string>
-    <string name="channel_wechat_bubble_mode_conversations">Per-conversation notifications</string>
-    <string name="channel_wechat_bubble_mode_conversations_description">Separate low-interruption WeChat notifications for each conversation while Chat bubbles are enabled</string>
+    <string name="channel_wechat_bubbled_messages">Bubbled WeChat messages</string>
+    <string name="channel_wechat_bubbled_messages_description">Silently shows rewritten WeChat messages while their bubble is available</string>
     <string name="channel_wechat_bubble_host">Bubble host notification</string>
     <string name="channel_wechat_bubble_host_description">Launches and updates the WeChat bubble. Silent and minimized by default; keep notifications on.</string>
-    <string name="channel_status">Status</string>
     <string name="channel_wechat_incoming_calls">Incoming WeChat calls</string>
     <string name="channel_wechat_incoming_calls_description">Rings and vibrates for incoming WeChat voice and video calls</string>
     <string name="channel_wechat_ongoing_calls">Ongoing WeChat calls</string>

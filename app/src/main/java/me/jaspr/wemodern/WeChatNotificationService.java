@@ -464,64 +464,92 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
         originalToConversation.put(sbn.getKey(), parsed.conversationKey);
         rememberReplacement(sbn, parsed.conversationKey, stableId(parsed.conversationKey));
-        // Remove the original as early as possible so its high-importance heads-up surface
-        // has the smallest possible window before the quiet replacement and bubble are ready.
-        hideOriginal(sbn);
+        boolean replacementPosted = false;
+        try {
+            ArrayDeque<Message> history = histories.computeIfAbsent(
+                    parsed.conversationKey,
+                    key -> new ArrayDeque<>()
+            );
+            Icon originalSenderIcon = resolveSenderIcon(original);
+            Icon circularSenderIcon = ConversationShortcuts.circleAvatarIcon(
+                    this,
+                    originalSenderIcon
+            );
+            Message message = new Message(
+                    parsed.sender,
+                    parsed.text,
+                    sbn.getPostTime(),
+                    circularSenderIcon
+            );
+            if (!containsRecentDuplicate(history, message)) {
+                history.addLast(message);
+                while (history.size() > MAX_HISTORY) history.removeFirst();
+            }
 
-        ArrayDeque<Message> history = histories.computeIfAbsent(parsed.conversationKey, key -> new ArrayDeque<>());
-        Icon originalSenderIcon = resolveSenderIcon(original);
-        Icon circularSenderIcon = ConversationShortcuts.circleAvatarIcon(this, originalSenderIcon);
-        Message message = new Message(parsed.sender, parsed.text, sbn.getPostTime(), circularSenderIcon);
-        if (!containsRecentDuplicate(history, message)) {
-            history.addLast(message);
-            while (history.size() > MAX_HISTORY) history.removeFirst();
-        }
-
-        long avatarRevision = ConversationShortcuts.updateAvatarCache(
-                this,
-                parsed.conversationKey,
-                originalSenderIcon
-        );
-        ConversationBubblePreferences.record(
-                this,
-                parsed.conversationKey,
-                parsed.title,
-                parsed.groupConversation,
-                sbn.getPostTime(),
-                avatarRevision
-        );
-        ConversationShortcuts.publish(
-                this,
-                parsed.conversationKey,
-                parsed.title,
-                original.contentIntent
-        );
-        ConversationBubbleState bubbleState = ConversationBubbleStore.get(parsed.conversationKey);
-        if (bubbleState == null) {
-            bubbleState = ConversationBubbleState.create(
+            long avatarRevision = ConversationShortcuts.updateAvatarCache(
+                    this,
+                    parsed.conversationKey,
+                    originalSenderIcon
+            );
+            ConversationBubblePreferences.record(
+                    this,
+                    parsed.conversationKey,
+                    parsed.title,
+                    parsed.groupConversation,
+                    sbn.getPostTime(),
+                    avatarRevision
+            );
+            ConversationShortcuts.publish(
+                    this,
                     parsed.conversationKey,
                     parsed.title,
                     original.contentIntent
             );
-        } else {
-            bubbleState = bubbleState.withMetadata(parsed.title, original.contentIntent);
+            ConversationBubbleState bubbleState = ConversationBubbleStore.get(
+                    parsed.conversationKey
+            );
+            if (bubbleState == null) {
+                bubbleState = ConversationBubbleState.create(
+                        parsed.conversationKey,
+                        parsed.title,
+                        original.contentIntent
+                );
+            } else {
+                bubbleState = bubbleState.withMetadata(parsed.title, original.contentIntent);
+            }
+            bubbleState = bubbleState.append(
+                    parsed.sender,
+                    parsed.text,
+                    sbn.getPostTime(),
+                    original.contentIntent
+            );
+            ConversationBubbleStore.update(bubbleState);
+            replacementPosted = postReplacement(
+                    sbn,
+                    parsed,
+                    history,
+                    original,
+                    circularSenderIcon,
+                    originalSenderIcon,
+                    bubbleState
+            );
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to prepare rewritten WeChat message", e);
         }
-        bubbleState = bubbleState.append(
-                parsed.sender,
-                parsed.text,
-                sbn.getPostTime(),
-                original.contentIntent
-        );
-        ConversationBubbleStore.update(bubbleState);
-        postReplacement(
-                sbn,
-                parsed,
-                history,
-                original,
-                circularSenderIcon,
-                originalSenderIcon,
-                bubbleState
-        );
+
+        if (!replacementPosted) {
+            originalToConversation.remove(sbn.getKey());
+            forgetReplacement(CancelEventKey.from(sbn));
+            Log.w(TAG, "leave original WeChat message after replacement failure"
+                    + ", key=" + sbn.getKey()
+                    + ", conversation=" + parsed.conversationKey);
+            return;
+        }
+
+        // Only hide WeChat after Android accepted our replacement. A broken icon, shortcut,
+        // bubble, or channel can now degrade to the original notification instead of losing the
+        // message entirely.
+        hideOriginal(sbn);
         hideDuplicateOriginals(parsed, sbn.getKey());
         Log.i(TAG, "rewritten wechat notification"
                 + ", fromActiveScan=" + fromActiveScan
@@ -531,10 +559,10 @@ public class WeChatNotificationService extends NotificationListenerService {
                 + ", key=" + sbn.getKey());
     }
 
-    private void postReplacement(StatusBarNotification sbn, ParsedNotification parsed,
-                                 ArrayDeque<Message> history, Notification original,
-                                 Icon senderIcon, Icon originalSenderIcon,
-                                 ConversationBubbleState bubbleState) {
+    private boolean postReplacement(StatusBarNotification sbn, ParsedNotification parsed,
+                                    ArrayDeque<Message> history, Notification original,
+                                    Icon senderIcon, Icon originalSenderIcon,
+                                    ConversationBubbleState bubbleState) {
         CharSequence contentText = parsed.groupConversation
                 ? parsed.sender + ": " + parsed.text
                 : parsed.text;
@@ -591,39 +619,76 @@ public class WeChatNotificationService extends NotificationListenerService {
         );
 
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        Notification replacementNotification;
+        int replacementId = stableId(parsed.conversationKey);
+        Notification replacementNotification = null;
         try {
             Log.i(TAG, "post replacement notification"
-                    + ", replacementId=" + stableId(parsed.conversationKey)
+                    + ", replacementId=" + replacementId
                     + ", conversation=" + parsed.conversationKey
                     + ", originalKey=" + sbn.getKey());
             replacementNotification = builder.build();
-            nm.notify(stableId(parsed.conversationKey), replacementNotification);
+            nm.notify(replacementId, replacementNotification);
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to post with original icons, falling back", e);
             smallIcon = Icon.createWithResource(this, R.drawable.ic_wechat_notification_small);
             builder.setSmallIcon(smallIcon);
             builder.setLargeIcon((Icon) null);
             builder.setStyle(buildMessageStyle(parsed, history, false));
-            Log.i(TAG, "post fallback replacement notification"
-                    + ", replacementId=" + stableId(parsed.conversationKey)
-                    + ", conversation=" + parsed.conversationKey
-                    + ", originalKey=" + sbn.getKey());
-            replacementNotification = builder.build();
-            nm.notify(stableId(parsed.conversationKey), replacementNotification);
+            try {
+                if (Build.VERSION.SDK_INT >= 29) builder.setBubbleMetadata(null);
+                Icon fallbackBubbleIcon = Icon.createWithResource(this, R.mipmap.ic_launcher);
+                ConversationBubbles.applyTo(
+                        this,
+                        builder,
+                        bubbleState,
+                        fallbackBubbleIcon,
+                        replacementId
+                );
+                Log.i(TAG, "post fallback replacement notification"
+                        + ", replacementId=" + replacementId
+                        + ", conversation=" + parsed.conversationKey
+                        + ", originalKey=" + sbn.getKey());
+                replacementNotification = builder.build();
+                nm.notify(replacementId, replacementNotification);
+            } catch (RuntimeException fallbackError) {
+                Log.w(TAG, "failed to post fallback replacement notification", fallbackError);
+                if (Build.VERSION.SDK_INT >= 29) builder.setBubbleMetadata(null);
+                try {
+                    Log.i(TAG, "post notification-only replacement"
+                            + ", replacementId=" + replacementId
+                            + ", conversation=" + parsed.conversationKey
+                            + ", originalKey=" + sbn.getKey());
+                    replacementNotification = builder.build();
+                    nm.notify(replacementId, replacementNotification);
+                } catch (RuntimeException notificationOnlyError) {
+                    Log.w(TAG, "failed to post notification-only replacement",
+                            notificationOnlyError);
+                    return false;
+                }
+            }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            TrampolineBubbleHost.update(
-                    this,
-                    replacementNotification,
-                    parsed.conversationKey,
-                    parsed.title,
-                    originalSenderIcon != null ? originalSenderIcon : bubbleIcon
-            );
+            try {
+                TrampolineBubbleHost.update(
+                        this,
+                        replacementNotification,
+                        parsed.conversationKey,
+                        parsed.title,
+                        originalSenderIcon != null ? originalSenderIcon : bubbleIcon,
+                        original.contentIntent
+                );
+            } catch (RuntimeException e) {
+                Log.w(TAG, "failed to update trampoline after message replacement", e);
+            }
         }
         if (histories.size() >= 2) {
-            postMessageGroupSummary(contentIntent, smallIcon, messageChannelId);
+            try {
+                postMessageGroupSummary(contentIntent, smallIcon, messageChannelId);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "failed to post message group summary", e);
+            }
         }
+        return true;
     }
 
     private void postMessageGroupSummary(

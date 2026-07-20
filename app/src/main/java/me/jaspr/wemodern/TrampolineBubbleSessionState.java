@@ -27,6 +27,11 @@ final class TrampolineBubbleSessionState {
         return true;
     }
 
+    /** Stops an intentionally replaced host task from clearing its successor. */
+    static void onHostReplaced() {
+        embeddedTaskId = NO_TASK;
+    }
+
     static void onHostCleared() {
         embeddedTaskId = NO_TASK;
     }

@@ -16,6 +16,11 @@ public class NotificationCleanupPolicyTest {
                 false,
                 false));
         assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
+                TrampolineBubbleHost.SECONDARY_NOTIFICATION_ID,
+                false,
+                false,
+                false));
+        assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
                 123,
                 true,
                 false,

@@ -34,4 +34,13 @@ public class TrampolineBubbleSessionStateTest {
         TrampolineBubbleSessionState.onHostCleared();
         assertFalse(TrampolineBubbleSessionState.isEmbeddedSessionActive());
     }
+
+    @Test
+    public void replacingHostDetachesTheOldTaskFromSuccessorCleanup() {
+        TrampolineBubbleSessionState.onEmbeddedLaunchStarted(42);
+        TrampolineBubbleSessionState.onHostReplaced();
+
+        assertFalse(TrampolineBubbleSessionState.isEmbeddedSessionActive());
+        assertFalse(TrampolineBubbleSessionState.onTaskRemoved(42));
+    }
 }

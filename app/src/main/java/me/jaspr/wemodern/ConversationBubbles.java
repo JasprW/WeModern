@@ -133,8 +133,8 @@ final class ConversationBubbles {
             boolean conversationBubbleEnabled = enabled && conversationPreferenceEnabled;
             boolean conversationBubbleReady = bubbleReady && conversationPreferenceEnabled;
             String desiredChannelId = NotificationChannels.messageChannelId(
-                    bubbleReady,
-                    conversationPreferenceEnabled
+                    context,
+                    conversationId
             );
             boolean channelChanged = !desiredChannelId.equals(notification.getChannelId());
 

@@ -61,6 +61,14 @@
             android:resizeableActivity="true"
             android:theme="@style/BubbleActivityTheme" />
 
+        <activity
+            android:name=".TrampolineBridgeActivity"
+            android:allowEmbedded="true"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:theme="@style/BubbleActivityTheme" />
+
         <receiver
             android:name=".BubbleDismissReceiver"
             android:exported="false" />

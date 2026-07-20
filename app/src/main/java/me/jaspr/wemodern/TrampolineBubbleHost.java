@@ -8,6 +8,7 @@ import android.app.Person;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.drawable.Icon;
@@ -17,6 +18,7 @@ import android.util.Log;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /** Owns the single, stable bubble used by the experimental WeChat trampoline mode. */
 final class TrampolineBubbleHost {
@@ -24,16 +26,23 @@ final class TrampolineBubbleHost {
 
     private static final int LEGACY_NOTIFICATION_ID = 0x57424853;
     static final int NOTIFICATION_ID = 0x57424854;
+    static final int SECONDARY_NOTIFICATION_ID = 0x57424855;
     static final String SHORTCUT_ID = "wemodern_wechat_bubble_host";
 
     private static final int REQUEST_CODE = 0x44000000;
+    private static final String HOST_STATE_PREFERENCES = "trampoline_bubble_host_state";
+    private static final String KEY_NOTIFICATION_ID = "notification_id";
+    private static final String KEY_CONVERSATION_ID = "conversation_id";
+    private static final String KEY_CONVERSATION_BRIDGE = "conversation_bridge";
     private static volatile boolean hostNotificationPosted;
 
     private TrampolineBubbleHost() {
     }
 
     static boolean isHostNotificationId(int notificationId) {
-        return notificationId == NOTIFICATION_ID || notificationId == LEGACY_NOTIFICATION_ID;
+        return notificationId == NOTIFICATION_ID
+                || notificationId == SECONDARY_NOTIFICATION_ID
+                || notificationId == LEGACY_NOTIFICATION_ID;
     }
 
     static int requestCode() {
@@ -91,13 +100,40 @@ final class TrampolineBubbleHost {
         return candidatePostTime > currentPostTime;
     }
 
+    static boolean shouldUseConversationBridge(
+            boolean experimentalEnabled,
+            boolean hasUsableBridgeIntent
+    ) {
+        return experimentalEnabled && hasUsableBridgeIntent;
+    }
+
+    static boolean shouldRotateHost(
+            boolean hasActiveHost,
+            String currentConversationId,
+            String nextConversationId,
+            boolean currentConversationBridge,
+            boolean nextConversationBridge
+    ) {
+        if (!hasActiveHost) return false;
+        if (currentConversationBridge != nextConversationBridge) return true;
+        return nextConversationBridge
+                && !Objects.equals(currentConversationId, nextConversationId);
+    }
+
+    static int alternateNotificationId(int currentNotificationId) {
+        return currentNotificationId == NOTIFICATION_ID
+                ? SECONDARY_NOTIFICATION_ID
+                : NOTIFICATION_ID;
+    }
+
     @TargetApi(31)
     static boolean update(
             Context context,
             Notification source,
             String sourceConversationId,
             CharSequence sourceTitle,
-            Icon sourceIcon
+            Icon sourceIcon,
+            PendingIntent sourceConversationIntent
     ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false;
         boolean chatBubblesReady = ChatBubbleBehavior.isReady(
@@ -138,12 +174,36 @@ final class TrampolineBubbleHost {
 
         boolean posted = false;
         try {
-            PendingIntent bubbleIntent = PendingIntent.getActivity(
-                    context,
-                    requestCode(),
-                    weChatTarget,
-                    ConversationBubbles.pendingIntentFlags()
+            boolean conversationBridgeEnabled =
+                    BubbleTrampolineBehavior.isConversationBridgeEnabled(context);
+            PendingIntent bridgeIntent = conversationBridgeEnabled
+                    ? TrampolineBridgeActivity.createBubbleIntent(
+                            context,
+                            sourceConversationIntent,
+                            sourceConversationId
+                    )
+                    : null;
+            boolean useConversationBridge = shouldUseConversationBridge(
+                    conversationBridgeEnabled,
+                    bridgeIntent != null
             );
+            PendingIntent bubbleIntent = useConversationBridge
+                    ? bridgeIntent
+                    : PendingIntent.getActivity(
+                            context,
+                            requestCode(),
+                            weChatTarget,
+                            ConversationBubbles.pendingIntentFlags()
+                    );
+            HostIdentity hostIdentity = resolveHostIdentity(
+                    context,
+                    notificationManager,
+                    sourceConversationId,
+                    useConversationBridge
+            );
+            if (hostIdentity.rotating) {
+                TrampolineBubbleSessionState.onHostReplaced();
+            }
             Notification.BubbleMetadata metadata = new Notification.BubbleMetadata.Builder(
                     bubbleIntent,
                     bubbleIcon
@@ -169,13 +229,26 @@ final class TrampolineBubbleHost {
                     .setLocusId(new android.content.LocusId(SHORTCUT_ID))
                     .setBubbleMetadata(metadata);
 
-            notificationManager.notify(NOTIFICATION_ID, builder.build());
+            notificationManager.notify(hostIdentity.nextNotificationId, builder.build());
+            if (hostIdentity.rotating) {
+                notificationManager.cancel(hostIdentity.previousNotificationId);
+            }
+            persistHostIdentity(
+                    context,
+                    hostIdentity.nextNotificationId,
+                    sourceConversationId,
+                    useConversationBridge
+            );
             posted = true;
             hostNotificationPosted = true;
             Log.i(TAG, "updated trampoline bubble host"
                     + ", sourceConversation=" + sourceConversationId
                     + ", shortcut=" + SHORTCUT_ID
-                    + ", notificationId=" + NOTIFICATION_ID);
+                    + ", notificationId=" + hostIdentity.nextNotificationId
+                    + ", rotated=" + hostIdentity.rotating
+                    + ", launchMode=" + (useConversationBridge
+                    ? "conversation-bridge"
+                    : "wechat-home"));
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to update trampoline bubble host", e);
         } finally {
@@ -223,7 +296,16 @@ final class TrampolineBubbleHost {
         CharSequence title = source.extras == null
                 ? null
                 : source.extras.getCharSequence(Notification.EXTRA_TITLE);
-        update(context, source, source.getShortcutId(), title, icon);
+        ConversationBubbleState state = ConversationBubbleStore.get(source.getShortcutId());
+        PendingIntent conversationIntent = state == null ? null : state.contentIntent;
+        update(
+                context,
+                source,
+                source.getShortcutId(),
+                title,
+                icon,
+                conversationIntent
+        );
     }
 
     static void clear(Context context) {
@@ -233,8 +315,13 @@ final class TrampolineBubbleHost {
                 context.getSystemService(NotificationManager.class);
         if (notificationManager != null) {
             notificationManager.cancel(NOTIFICATION_ID);
+            notificationManager.cancel(SECONDARY_NOTIFICATION_ID);
             notificationManager.cancel(LEGACY_NOTIFICATION_ID);
         }
+        context.getSharedPreferences(HOST_STATE_PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .apply();
         if (Build.VERSION.SDK_INT < 30) return;
 
         ShortcutManager shortcutManager = context.getSystemService(ShortcutManager.class);
@@ -314,6 +401,100 @@ final class TrampolineBubbleHost {
     private static String normalizedLabel(Context context, CharSequence sourceTitle) {
         String label = sourceTitle == null ? "" : sourceTitle.toString().trim();
         return label.isEmpty() ? context.getString(R.string.app_name) : label;
+    }
+
+    private static HostIdentity resolveHostIdentity(
+            Context context,
+            NotificationManager manager,
+            String nextConversationId,
+            boolean nextConversationBridge
+    ) {
+        SharedPreferences preferences = context.getSharedPreferences(
+                HOST_STATE_PREFERENCES,
+                Context.MODE_PRIVATE
+        );
+        int storedNotificationId = preferences.getInt(
+                KEY_NOTIFICATION_ID,
+                NOTIFICATION_ID
+        );
+        int activeNotificationId = activeHostNotificationId(manager, storedNotificationId);
+        if (activeNotificationId == 0) {
+            return new HostIdentity(0, NOTIFICATION_ID, false);
+        }
+
+        boolean storedIdentityIsActive = storedNotificationId == activeNotificationId;
+        String currentConversationId = storedIdentityIsActive
+                ? preferences.getString(KEY_CONVERSATION_ID, null)
+                : null;
+        boolean currentConversationBridge = storedIdentityIsActive
+                && preferences.getBoolean(KEY_CONVERSATION_BRIDGE, false);
+        boolean rotating = !storedIdentityIsActive || shouldRotateHost(
+                true,
+                currentConversationId,
+                nextConversationId,
+                currentConversationBridge,
+                nextConversationBridge
+        );
+        int nextNotificationId = rotating
+                ? alternateNotificationId(activeNotificationId)
+                : activeNotificationId;
+        return new HostIdentity(
+                activeNotificationId,
+                nextNotificationId,
+                rotating
+        );
+    }
+
+    private static int activeHostNotificationId(
+            NotificationManager manager,
+            int preferredNotificationId
+    ) {
+        try {
+            int fallback = 0;
+            for (StatusBarNotification notification : manager.getActiveNotifications()) {
+                int notificationId = notification.getId();
+                if (notificationId != NOTIFICATION_ID
+                        && notificationId != SECONDARY_NOTIFICATION_ID) {
+                    continue;
+                }
+                if (notificationId == preferredNotificationId) return notificationId;
+                fallback = notificationId;
+            }
+            return fallback;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "failed to inspect active trampoline host identity", e);
+            return 0;
+        }
+    }
+
+    private static void persistHostIdentity(
+            Context context,
+            int notificationId,
+            String conversationId,
+            boolean conversationBridge
+    ) {
+        context.getSharedPreferences(HOST_STATE_PREFERENCES, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(KEY_NOTIFICATION_ID, notificationId)
+                .putString(KEY_CONVERSATION_ID, conversationId)
+                .putBoolean(KEY_CONVERSATION_BRIDGE, conversationBridge)
+                .apply();
+    }
+
+    private static final class HostIdentity {
+        final int previousNotificationId;
+        final int nextNotificationId;
+        final boolean rotating;
+
+        HostIdentity(
+                int previousNotificationId,
+                int nextNotificationId,
+                boolean rotating
+        ) {
+            this.previousNotificationId = previousNotificationId;
+            this.nextNotificationId = nextNotificationId;
+            this.rotating = rotating;
+        }
     }
 
     private static final class ShortcutPublication {
