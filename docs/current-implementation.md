@@ -46,7 +46,7 @@ Android 12（API 31）及以上可启用 trampoline 模式。它现在固定采�
 
 Bubble 的 mutable Activity PendingIntent 先启动 non-exported、可嵌入的 `TrampolineBridgeActivity`，Bridge 验证目标是 `com.tencent.mm` 创建的 Activity token 后，再原样转发该会话最新通知的 immutable `contentIntent`。Bridge 常驻为 Bubble task 根；微信对话 Back 回到 Bridge 时，Bridge 把 task 移到后台，从而收起而不是删除 Bubble，再次展开时会重新转发最新目标。由于 WeModern 不能修改微信 immutable token 的内部 task flags，其他 Android 或微信版本仍可能复用全屏 task；目标缺失、类型无效或 token 已取消时，该条真实微信通知不会附加 trampoline Bubble。
 
-Bridge session 以 task ID 和会话 ID 并行跟踪，移除一个 task 不会清理其他会话。微信进入聊天后会批量撤销多个源通知；嵌入 session 期间，所有仍带 BubbleMetadata、匹配 shortcut 且被系统标记为 `FLAG_BUBBLE` 的活动会话替换都会继续作为 host 保留，避免展开后一个 Bubble 时关闭前一个。未真正成为 Bubble 的普通通知继续同步删除；用户显式拖走 Bubble、打开全屏微信或关闭功能仍会清理对应范围。
+Bridge session 以 task ID 和会话 ID 并行跟踪，移除一个 task 不会清理其他会话。微信进入聊天后会批量撤销多个源通知；嵌入 session 期间，所有仍带 BubbleMetadata、匹配 shortcut 且被系统标记为 `FLAG_BUBBLE` 的活动会话替换都会继续作为 host 保留，避免展开后一个 Bubble 时关闭前一个。源映射消费后，SystemUI 可能再次回送同一个 host 的 Bubble 状态更新；只要内存会话状态、稳定通知 ID、shortcut、metadata 与 `FLAG_BUBBLE` 仍完整，孤儿清理也会保留它。进程重建后缺少会话状态的真正 orphan、未成为 Bubble 的普通通知、用户显式拖走 Bubble、打开全屏微信或关闭功能仍会清理对应范围。
 
 Pixel 9 Pro / API 37 已完成双会话真机验收：不同会话 Bubble 可同时保留、分别进入对应聊天，直接 Back 收起当前 Bubble；后续消息更新后重新展开会进入该会话的新目标。此前“一开后一个就关前一个”的问题已通过扩大 APP_CANCEL 期间的活动 Bubble host 保护范围修复。证据与平台风险见 [Trampoline PendingIntent bridge](explorations/2026-07-20-trampoline-pending-intent-bridge.md)和[多会话 Trampoline Bubble](explorations/2026-07-21-multi-conversation-trampoline-bubbles.md)。
 
@@ -102,6 +102,7 @@ Message 测试通知 ID 始终为 `100`，小图标必须是 `R.drawable.ic_wech
 | Android 12+ bubble 启动缺少嵌入任务选项 | bubble Activity `PendingIntent` 使用 mutable flag，删除回调保持 immutable。 |
 | 多个 trampoline 会话互相结束 WeChat task | 每个会话使用独立通知 host、document Bridge task 与按 task / 会话隔离的 session 状态。 |
 | 微信批量撤销源通知误杀其他 trampoline Bubble | 嵌入期间保留所有 ID、shortcut、BubbleMetadata 和 `FLAG_BUBBLE` 都匹配的活动 host；普通通知继续同步移除。 |
+| SystemUI 的 Bubble 状态更新被当成无映射 orphan | 孤儿清理额外验证内存会话状态、稳定 ID、shortcut、metadata 与 `FLAG_BUBBLE`，保留仍存活的 trampoline host。 |
 | Bubble 未获准时低重要性消息无提醒 | 所有消息统一使用 alerting channel；真正 Bubble 由已验证的 SystemUI flyout 取代普通 HUN。 |
 | 群聊头像误用于其他会话/发送者 | 快捷方式图标按会话缓存，避免复用群聊发送者头像。 |
 | 某些取消事件没有 listener 回调 | 可选日志监视加持久化 replacement 映射补偿清理。 |

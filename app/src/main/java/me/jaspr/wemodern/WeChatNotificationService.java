@@ -819,12 +819,16 @@ public class WeChatNotificationService extends NotificationListenerService {
         boolean groupSummary = isMessageGroupSummary(sbn.getNotification());
         boolean testNotification = isTestNotificationId(sbn.getId());
         boolean persistedReplacement = hasPersistedReplacement(sbn.getId());
+        boolean activeTrampolineHost = isLiveTrampolineBubbleHost(sbn);
         if (shouldKeepSelfNotification(
                 groupSummary,
                 testNotification,
-                persistedReplacement
+                persistedReplacement,
+                activeTrampolineHost
         )) {
-            Log.d(TAG, "keep owned notification"
+            Log.d(TAG, (activeTrampolineHost
+                    ? "keep active trampoline bubble host"
+                    : "keep owned notification")
                     + ", id=" + sbn.getId()
                     + ", channel=" + channel
                     + ", key=" + sbn.getKey());
@@ -844,11 +848,30 @@ public class WeChatNotificationService extends NotificationListenerService {
     static boolean shouldKeepSelfNotification(
             boolean groupSummary,
             boolean testNotification,
-            boolean persistedReplacement
+            boolean persistedReplacement,
+            boolean activeTrampolineHost
     ) {
         return groupSummary
                 || testNotification
-                || persistedReplacement;
+                || persistedReplacement
+                || activeTrampolineHost;
+    }
+
+    private boolean isLiveTrampolineBubbleHost(StatusBarNotification sbn) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false;
+        Notification notification = sbn.getNotification();
+        if (!isMessageGroupChild(notification)) return false;
+        String conversationId = notification.getShortcutId();
+        if (ConversationBubbleStore.get(conversationId) == null) return false;
+        return BubbleTrampolineBehavior.isEnabled(this)
+                && ConversationBubbles.isActiveTrampolineHost(
+                        sbn.getId(),
+                        stableId(conversationId),
+                        notification.getShortcutId(),
+                        conversationId,
+                        notification.getBubbleMetadata() != null,
+                        (notification.flags & Notification.FLAG_BUBBLE) != 0
+                );
     }
 
     private static boolean isMessageGroupSummary(Notification notification) {

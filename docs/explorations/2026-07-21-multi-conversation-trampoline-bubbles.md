@@ -59,6 +59,23 @@ Pixel 9 Pro / API 37 已确认：
 - 真正 Bubble 的替换通知使用稳定会话 ID、有效 shortcut、`FLAG_BUBBLE` 和统一消息 channel；
   没有重新创建固定 host。
 
+后续三会话测试发现新的 host 清理竞态：米老鼠 Bubble 已经展开并收起后，JASPR 与群聊测试
+两个新 Bubble 到达；首次展开群聊测试时两个新入口都退出，只留下旧 Bubble。安装第一版推测
+修复后，单个群聊测试 Bubble 仍可稳定复现，完整应用日志还原出以下顺序：
+
+- SystemUI 为群聊测试创建 `TrampolineBridgeActivity` 与微信 `ChattingMainUI` 的 Bubble task。
+- Bridge 报告 `platformBubble=true`，并成功转发微信 immutable 会话 token。
+- 微信 app-cancel 源通知；服务确认嵌入 session 有效并记录 `preserve trampoline bubble host`。
+- 保留分支消费源 replacement 映射后，SystemUI 回送同一通知的 `FLAG_BUBBLE` 状态更新。
+- `onNotificationPosted` 的 orphan 清理因映射已删除而主动取消 host；约 570ms 后 task 被移除。
+
+因此根因不是 Bridge 启动身份或微信 task flags，而是“已消费源映射”和“仍存活 Bubble host”
+被错误地视为同一生命周期。孤儿清理现在单独识别仍有内存会话状态、稳定通知 ID、匹配
+shortcut、BubbleMetadata 与 `FLAG_BUBBLE` 的 trampoline host；它不再依赖已消费的源映射。
+进程重建后没有内存会话状态的残留仍会清理，避免永久保留真正 orphan。对应纯策略单测覆盖
+无持久映射但活动 trampoline host 为 true 的组合；单会话与精确三会话交互仍作为安装后的
+真机回归项。
+
 SystemUI 同时只展开一个 Bubble；“并存”指 Bubble 栈中保留多个入口。其他 Android 或
 微信版本仍可能复用现有全屏 task，因为 WeModern 无法修改 immutable PendingIntent 的
 内部 flags。目标缺失、类型无效或 token 已取消时，真实微信通知不会附加 trampoline

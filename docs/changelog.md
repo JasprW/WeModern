@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- 修复单个或多个新 Bubble 打开后立即退出：Pixel 日志确认 Bridge 与微信会话均已正常启动，源通知 app-cancel 也正确进入保留分支；但该分支删除 replacement 映射后，SystemUI 紧接着回送带 `FLAG_BUBBLE` 的 host 更新，孤儿清理把它误判为无映射残留并主动取消，最终让 SystemUI 移除 Bubble task。现在仍有内存会话状态、稳定通知 ID、匹配 shortcut、BubbleMetadata 与 `FLAG_BUBBLE` 的 trampoline host 即使源映射已消费也继续保留；进程重建后没有会话状态的真正 orphan 仍会清理。
 - 将已通过 Pixel 9 Pro / API 37 双会话验收的精确多会话桥接设为 Bubble trampoline 的唯一预设行为：每个合资格微信会话使用自己的稳定替换通知、conversation shortcut 和 Bridge PendingIntent 作为 Bubble host；同一会话更新原 Bubble，不同会话可并存并分别直达。删除“精确打开会话”和“多会话气泡”两个实验开关，以及旧固定最新会话 host、微信 Home 路径、双 host ID 轮换、专用 shortcut、设置卡和实现代码；升级时同步取消历史 host 通知、移除 shortcut、清空偏好并删除 `wechat_bubble_host_visual_alerts` channel。
 - 修复打开后一个 Bubble 会关闭前一个：Pixel 日志确认微信进入聊天时会连续 APP_CANCEL 多个源通知，旧保护只覆盖当前 Bridge 会话，导致其他 Bubble host 跟随源通知删除。现在嵌入启动期间保留所有仍带 BubbleMetadata、匹配会话 shortcut 且被系统标记为 Bubble 的活动 host；未真正成为 Bubble 的普通通知、显式拖走和全屏微信清理逻辑不变。真机已确认双会话可并存、分别直达，直接 Back 收起当前 Bubble，通知更新后重新展开进入对应的新聊天目标。
 - 合并 Bubble 与普通消息 channel：Pixel 9 Pro / API 37 对照实验确认，importance 4 的 `wechat_messages_alerts` 通知在同时具备 BubbleMetadata 并被系统标记为 `FLAG_BUBBLE` 后只显示 Bubble flyout，SystemUI row 为 `isHeadsUpState=false`、`isPinned=false`，不会再出现普通顶部 heads-up；channel 的声音和振动仍然生效。现在所有消息统一使用 `wechat_messages_alerts`，升级时先迁移活动通知，再删除 `wechat_messages_bubbled_quiet` 及两个更早的 quiet channel。
