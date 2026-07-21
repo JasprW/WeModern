@@ -4,12 +4,11 @@
 
 ## Unreleased
 
-- 新增默认关闭的“多会话气泡（实验性）”：在 trampoline 与精确会话桥接均开启时，每个合资格微信会话使用自己的稳定替换通知、conversation shortcut 和 Bridge PendingIntent 作为独立 Bubble host；同一会话更新原 Bubble，不同会话可并存并分别转发各自最新微信通知入口。Bridge task 改为多 session 跟踪，移除一个 Bubble 不会清掉其他会话；微信进入聊天后撤销原通知时保留仍由系统认定为 Bubble 的活动 host，拖走 Bubble 或进入全屏微信仍会清理。固定 host channel 卡片在该模式下隐藏。Pixel 9 Pro / API 37 已确认一条真实群聊使用普通会话通知作为静音 Bubble host，真机双会话切换仍待验收。
-- 修复多会话实验中打开最后一个 Bubble 会关闭前一个：Pixel 日志确认微信进入聊天时会连续 APP_CANCEL 多个源通知，旧保护只覆盖当前 Bridge 会话，导致未点开的其他 Bubble host 跟随源通知删除。现在嵌入启动期间保留所有仍带 BubbleMetadata、匹配会话 shortcut 且被系统标记为 Bubble 的活动 host；未真正成为 Bubble 的普通通知、显式拖走和全屏微信清理逻辑不变。
-- 为 Bubble trampoline 增加默认关闭的“精确打开会话（实验性）”开关：固定 host 可先启动 non-exported mutable bridge，再转发最新微信消息的原始 immutable `contentIntent`，尝试直接进入对应对话。仅接受微信创建的 Activity token；目标缺失或失效时回退微信 Home。由于 immutable token 的内部 task flags 不可改写，该路径仍可能跳出气泡或切到全屏微信，设置文案会明确提示这一边界。
-- 修复实验桥接的返回与会话更新任务栈：真机证明预置微信 Home 会被复用到独立全屏 task，Bubble 内仍只有旧 `ChattingMainUI`，Back 会以 `TASK_FINISHED` 删除 Bubble；固定 host 更新也不会重启已有 TaskView。现在 Bridge 常驻为 Bubble 根，对话返回时主动把 task 移到后台并在下次展开时重新转发；不同会话会更换 PendingIntent 身份并在两个自有 host ID 间交替，先发布新 host 再取消旧 host，强制 SystemUI 为最新会话创建新 TaskView。
+- 将已通过 Pixel 9 Pro / API 37 双会话验收的精确多会话桥接设为 Bubble trampoline 的唯一预设行为：每个合资格微信会话使用自己的稳定替换通知、conversation shortcut 和 Bridge PendingIntent 作为 Bubble host；同一会话更新原 Bubble，不同会话可并存并分别直达。删除“精确打开会话”和“多会话气泡”两个实验开关，以及旧固定最新会话 host、微信 Home 路径、双 host ID 轮换、专用 shortcut、设置卡和实现代码；升级时同步取消历史 host 通知、移除 shortcut、清空偏好并删除 `wechat_bubble_host_visual_alerts` channel。
+- 修复打开后一个 Bubble 会关闭前一个：Pixel 日志确认微信进入聊天时会连续 APP_CANCEL 多个源通知，旧保护只覆盖当前 Bridge 会话，导致其他 Bubble host 跟随源通知删除。现在嵌入启动期间保留所有仍带 BubbleMetadata、匹配会话 shortcut 且被系统标记为 Bubble 的活动 host；未真正成为 Bubble 的普通通知、显式拖走和全屏微信清理逻辑不变。真机已确认双会话可并存、分别直达，直接 Back 收起当前 Bubble，通知更新后重新展开进入对应的新聊天目标。
+- 保留 alerting 与 quiet 两条消息 channel，不与 Bubble metadata 合并：通知 importance、声音和 heads-up 对整个 channel 生效，metadata 只能声明 Bubble，不能逐条把高重要性普通消息降为静音。Android 允许所有会话 Bubble 且会话合资格时使用 `wechat_messages_bubbled_quiet`；其余情况使用 `wechat_messages_alerts`，避免“仅所选会话”迁移 parent channel 后丢失许可。
 - 修复普通微信消息与 Bubble 可能同时消失：旧链路在准备并成功发布 WeModern 替换前就隐藏微信原通知，头像、shortcut、BubbleMetadata 或通知发布的任一运行时失败都可能留下空窗。现在仅在主替换被 Android 接受后隐藏原通知；失败时撤销映射并保留微信通知，同时增加安全图标与 notification-only 两级回退，并隔离 trampoline host / 分组摘要的附属失败。
-- 修复消息与 Bubble channel 初始化及重复 heads-up：v1.7.1 会在 Bubble 尚未真正获准时过早使用静音 channel，可能让 Bubble 和普通提醒同时消失。现在仅当合资格 Bubble 已实际可展示时，才把普通消息路由到全新的 `wechat_messages_bubbled_quiet`，其默认 `IMPORTANCE_LOW`、无声音、无振动；关闭 Bubble、会话禁用或许可不足时回到高重要性的 `wechat_messages_alerts`。Trampoline 以固定 host 的实际许可为准，常规模式只在 Android 允许所有会话时静默。升级会删除保存过错误用户设置的 `wechat_messages_bubbles_quiet` 和临时的 `wechat_messages_bubbles_quiet_v2`，最终稳定 ID 不再包含版本后缀。
+- 修复消息与 Bubble channel 初始化及重复 heads-up：v1.7.1 会在 Bubble 尚未真正获准时过早使用静音 channel，可能让 Bubble 和普通提醒同时消失。现在常规和 trampoline 模式都只在 Android 允许所有会话 Bubble、功能已就绪且会话合资格时，把消息路由到 `wechat_messages_bubbled_quiet`；其默认 `IMPORTANCE_LOW`、无声音、无振动。关闭 Bubble、会话禁用、许可不足或系统仅允许所选会话时回到高重要性的 `wechat_messages_alerts`。升级会删除保存过错误用户设置的 `wechat_messages_bubbles_quiet` 和临时的 `wechat_messages_bubbles_quiet_v2`，最终稳定 ID 不再包含版本后缀。
 - 删除已废弃的“状态”通知 channel：`status_alerts` 只用于早期通用测试通知，Message、Voice 和 Video 测试迁移到各自真实 channel 后已无任何发布者。现在移除常量与多语言资源，并在升级时删除旧 channel，避免 Android 通知设置继续显示无效分类；Pixel 9 Pro / API 37 的升级安装已确认它被标记为 deleted。
 
 ## 1.7.1 — 2026-07-20

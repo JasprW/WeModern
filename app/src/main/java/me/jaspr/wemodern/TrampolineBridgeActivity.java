@@ -11,7 +11,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
-/** Experimental mutable bubble root that forwards an opaque WeChat conversation intent. */
+/** Mutable bubble root that forwards an opaque WeChat conversation intent. */
 @TargetApi(Build.VERSION_CODES.S)
 public final class TrampolineBridgeActivity extends Activity {
     private static final String TAG = "WeModern";
@@ -102,15 +102,11 @@ public final class TrampolineBridgeActivity extends Activity {
     }
 
     static boolean shouldUseTarget(
-            boolean experimentalEnabled,
+            boolean trampolineEnabled,
             String creatorPackage,
             boolean activity
     ) {
-        return experimentalEnabled && WECHAT_PACKAGE.equals(creatorPackage) && activity;
-    }
-
-    static int requestCode() {
-        return REQUEST_CODE_NAMESPACE;
+        return trampolineEnabled && WECHAT_PACKAGE.equals(creatorPackage) && activity;
     }
 
     static int requestCodeFor(String conversationId) {
@@ -148,18 +144,14 @@ public final class TrampolineBridgeActivity extends Activity {
 
         int taskId = getTaskId();
         String conversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID);
-        boolean independentHost =
-                BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(this);
         TrampolineBubbleSessionState.onEmbeddedLaunchStarted(
                 taskId,
-                conversationId,
-                independentHost
+                conversationId
         );
         BubbleLaunchCleanup.suppressAppCancelForTrampolineLaunch(this);
         Log.i(TAG, "forwarding WeChat conversation from trampoline bubble"
                 + ", taskId=" + taskId
                 + ", conversation=" + conversationId
-                + ", independentHost=" + independentHost
                 + ", immutable=" + target.isImmutable()
                 + ", persistentBridgeRoot=true");
 

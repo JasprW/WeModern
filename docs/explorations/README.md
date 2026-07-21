@@ -8,8 +8,8 @@
 | [微信标记已读](../2026-07-16-wechat-mark-read-feasibility.md) | 暂不实现 | 需要微信支持的稳定接口或可授权的会话标识；应先确认可维护的官方能力。 |
 | [微信语音/视频通话通知实验与采集记录](2026-07-18-wechat-call-notification-capture.md) | 已实现 / 待完整回归 | 保留全部已撤回尝试；来电只使用标准 CallStyle，不申请全屏通知权限，Answer/Decline 都只在点击后打开微信通话页；接通由微信 `0x62` 候选门控音频模式快速确认，并保留通知更新与超时兜底。 |
 | [设置页滚动性能检查](2026-07-18-settings-scroll-performance.md) | 已优化 | 确认轻微卡顿主要来自超高 lazy item 的 UI/布局尖峰；记录 item 拆分、cache window、真机指标以及已撤回的字体和 ART 对照实验。 |
-| [Bubble channel 初始化调查](2026-07-20-bubble-channel-initialization.md) | 已修复 / 平台限制 | 普通会话不应因 BubbleMetadata 使用静音 channel；Android 11+ 的 host 气泡许可由用户控制，应用只能检测并引导，不能默认强开。 |
-| [Trampoline PendingIntent bridge](2026-07-20-trampoline-pending-intent-bridge.md) | 已实现 / 待真机验证 | 默认关闭的 bridge 可转发最新微信 immutable 会话 token；它可能进入精确对话，也可能跳出气泡，稳定 Home 路径保留为回退。 |
-| [多会话 Trampoline Bubble](2026-07-21-multi-conversation-trampoline-bubbles.md) | 已实现 / 待双会话真机验证 | 每个会话的普通替换通知可作为独立 Bridge Bubble host；同会话更新、跨会话并存，但仍受 Android 会话许可、微信 task 复用及 immutable token 行为约束。 |
+| [Bubble channel 初始化调查](2026-07-20-bubble-channel-initialization.md) | 已修复 / 平台限制 | BubbleMetadata 不能覆盖 channel 的 importance、声音或 heads-up；保留 alerting/quiet 两条消息 channel，并删除旧固定 host channel。 |
+| [Trampoline PendingIntent bridge](2026-07-20-trampoline-pending-intent-bridge.md) | 已实现 / 平台限制 | trampoline 默认由 per-conversation bridge 转发最新微信 immutable 会话 token；精确桥接已在 Pixel 验收，其他系统仍可能复用全屏 task。 |
+| [多会话 Trampoline Bubble](2026-07-21-multi-conversation-trampoline-bubbles.md) | 已交付 | 每个会话的普通替换通知作为独立 Bridge Bubble host；同会话更新、跨会话并存、Back 收起和新消息重定向已通过 Pixel 双会话验收。 |
 
 新探索文档建议采用 `YYYY-MM-DD-<topic>-feasibility.md` 命名，并写明：目标、已验证环境、证据、可行与不可行边界、依赖/风险、推荐结论和重新评估条件。

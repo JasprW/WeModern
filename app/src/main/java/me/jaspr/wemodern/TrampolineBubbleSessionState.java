@@ -12,16 +12,15 @@ final class TrampolineBubbleSessionState {
     }
 
     static synchronized void onEmbeddedLaunchStarted(int taskId) {
-        onEmbeddedLaunchStarted(taskId, null, false);
+        onEmbeddedLaunchStarted(taskId, null);
     }
 
     static synchronized void onEmbeddedLaunchStarted(
             int taskId,
-            String conversationId,
-            boolean independentHost
+            String conversationId
     ) {
         if (taskId < 0) return;
-        EMBEDDED_SESSIONS.put(taskId, new Session(conversationId, independentHost));
+        EMBEDDED_SESSIONS.put(taskId, new Session(conversationId));
     }
 
     static synchronized boolean isEmbeddedSessionActive() {
@@ -40,11 +39,6 @@ final class TrampolineBubbleSessionState {
         return false;
     }
 
-    static synchronized boolean isIndependentHostTask(int taskId) {
-        Session session = EMBEDDED_SESSIONS.get(taskId);
-        return session != null && session.independentHost;
-    }
-
     static synchronized boolean onTaskRemoved(int taskId) {
         return EMBEDDED_SESSIONS.remove(taskId) != null;
     }
@@ -55,27 +49,10 @@ final class TrampolineBubbleSessionState {
                 EMBEDDED_SESSIONS.entrySet().iterator();
         while (iterator.hasNext()) {
             Session session = iterator.next().getValue();
-            if (session.independentHost && conversationId.equals(session.conversationId)) {
+            if (conversationId.equals(session.conversationId)) {
                 iterator.remove();
             }
         }
-    }
-
-    static synchronized void onIndependentHostsCleared() {
-        Iterator<Map.Entry<Integer, Session>> iterator =
-                EMBEDDED_SESSIONS.entrySet().iterator();
-        while (iterator.hasNext()) {
-            if (iterator.next().getValue().independentHost) iterator.remove();
-        }
-    }
-
-    /** Stops an intentionally replaced host task from clearing its successor. */
-    static synchronized void onHostReplaced() {
-        clearSharedHostSessions();
-    }
-
-    static synchronized void onHostCleared() {
-        clearSharedHostSessions();
     }
 
     static synchronized void onAllHostsCleared() {
@@ -86,21 +63,11 @@ final class TrampolineBubbleSessionState {
         EMBEDDED_SESSIONS.clear();
     }
 
-    private static void clearSharedHostSessions() {
-        Iterator<Map.Entry<Integer, Session>> iterator =
-                EMBEDDED_SESSIONS.entrySet().iterator();
-        while (iterator.hasNext()) {
-            if (!iterator.next().getValue().independentHost) iterator.remove();
-        }
-    }
-
     private static final class Session {
         final String conversationId;
-        final boolean independentHost;
 
-        Session(String conversationId, boolean independentHost) {
+        Session(String conversationId) {
             this.conversationId = conversationId;
-            this.independentHost = independentHost;
         }
     }
 }

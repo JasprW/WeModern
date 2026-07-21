@@ -37,8 +37,7 @@ final class WeChatLauncher {
     static boolean openFromBubbleFallback(Activity activity) {
         TrampolineBubbleSessionState.onEmbeddedLaunchStarted(
                 activity.getTaskId(),
-                null,
-                BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(activity)
+                null
         );
         BubbleLaunchCleanup.suppressAppCancelForTrampolineLaunch(activity);
         // This path is used only if SystemUI restores the conversation shortcut intent instead
@@ -50,12 +49,6 @@ final class WeChatLauncher {
             BubbleLaunchCleanup.clearAppCancelSuppression(activity);
         }
         return opened;
-    }
-
-    static boolean isBubbleRootActivity(String componentName, String action) {
-        if (action != null || componentName == null) return false;
-        return componentName.equals(WECHAT_PACKAGE + "/.ui.LauncherUI")
-                || componentName.equals(WECHAT_PACKAGE + "/com.tencent.mm.ui.LauncherUI");
     }
 
     private static boolean open(

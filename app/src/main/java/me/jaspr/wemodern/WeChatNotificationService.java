@@ -236,6 +236,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private void startRewriteInfrastructure() {
+        BubbleTrampolineBehavior.removeLegacySingleHost(this);
         NotificationChannels.ensure(this);
         ConversationBubbles.syncActiveNotifications(this);
         if (cancelLogWatcher != null) return;
@@ -300,7 +301,7 @@ public class WeChatNotificationService extends NotificationListenerService {
             originalToConversation.remove(key);
             if (shouldPreserveMessageReplacement(conversationKey)) {
                 forgetReplacement(CancelEventKey.from(sbn));
-                Log.i(TAG, "preserve multi-conversation bubble host after original removal"
+                Log.i(TAG, "preserve trampoline bubble host after original removal"
                         + ", key=" + key
                         + ", conversation=" + conversationKey
                         + ", reason=" + reasonName(reason));
@@ -356,7 +357,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         removePersistedReplacement(eventKey);
         originalToConversation.remove(replacement.originalKey);
         if (shouldPreserveMessageReplacement(replacement.conversationKey)) {
-            Log.i(TAG, "preserve multi-conversation bubble host after app cancel log"
+            Log.i(TAG, "preserve trampoline bubble host after app cancel log"
                     + ", key=" + replacement.originalKey
                     + ", conversation=" + replacement.conversationKey
                     + ", reason=" + reasonName(reason));
@@ -374,19 +375,7 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     private void handleActivityEvent(NotificationCancelLogWatcher.ActivityEvent event) {
-        if (event.type == NotificationCancelLogWatcher.ActivityEvent.TYPE_CREATED) {
-            if (TrampolineBubbleHost.isHostNotificationPosted()
-                    && WeChatLauncher.isBubbleRootActivity(
-                            event.componentName,
-                            event.action
-                    )) {
-                TrampolineBubbleSessionState.onEmbeddedLaunchStarted(event.taskId);
-                Log.i(TAG, "tracking trampoline bubble task"
-                        + ", taskId=" + event.taskId
-                        + ", activity=" + event.componentName);
-            }
-            return;
-        }
+        if (event.type == NotificationCancelLogWatcher.ActivityEvent.TYPE_CREATED) return;
         if (event.type == NotificationCancelLogWatcher.ActivityEvent.TYPE_RESUMED) {
             WeChatForegroundState.onForegroundActivityChanged(
                     event.taskId,
@@ -400,30 +389,20 @@ public class WeChatNotificationService extends NotificationListenerService {
         }
         if (event.type != NotificationCancelLogWatcher.ActivityEvent.TYPE_TASK_REMOVED) return;
         WeChatForegroundState.onTaskRemoved(event.taskId);
-        boolean independentHost =
-                TrampolineBubbleSessionState.isIndependentHostTask(event.taskId);
         if (TrampolineBubbleSessionState.onTaskRemoved(event.taskId)) {
-            if (independentHost) {
-                Log.i(TAG, "released independent trampoline bubble task"
-                        + ", taskId=" + event.taskId);
-                return;
-            }
-            mainHandler.post(() -> {
-                Log.i(TAG, "clearing trampoline host after bubble task removed"
-                        + ", taskId=" + event.taskId);
-                TrampolineBubbleHost.clear(this);
-            });
+            Log.i(TAG, "released trampoline bubble task"
+                    + ", taskId=" + event.taskId);
         }
     }
 
     private boolean shouldPreserveMessageReplacement(String conversationKey) {
         return BubbleTrampolineBehavior.shouldPreserveMessageReplacement(
-                BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(this),
-                isActiveMultiConversationBubbleHost(conversationKey)
+                BubbleTrampolineBehavior.isEnabled(this),
+                isActiveTrampolineBubbleHost(conversationKey)
         );
     }
 
-    private boolean isActiveMultiConversationBubbleHost(String conversationKey) {
+    private boolean isActiveTrampolineBubbleHost(String conversationKey) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false;
         if (conversationKey == null || conversationKey.isEmpty()) return false;
         NotificationManager manager = getSystemService(NotificationManager.class);
@@ -432,14 +411,14 @@ public class WeChatNotificationService extends NotificationListenerService {
         try {
             active = manager.getActiveNotifications();
         } catch (RuntimeException e) {
-            Log.w(TAG, "failed to inspect active multi-conversation bubble hosts", e);
+            Log.w(TAG, "failed to inspect active trampoline bubble hosts", e);
             return false;
         }
         if (active == null) return false;
         int expectedNotificationId = stableId(conversationKey);
         for (StatusBarNotification sbn : active) {
             Notification notification = sbn.getNotification();
-            if (ConversationBubbles.isActiveMultiConversationHost(
+            if (ConversationBubbles.isActiveTrampolineHost(
                     sbn.getId(),
                     expectedNotificationId,
                     notification.getShortcutId(),
@@ -589,7 +568,6 @@ public class WeChatNotificationService extends NotificationListenerService {
                     history,
                     original,
                     circularSenderIcon,
-                    originalSenderIcon,
                     bubbleState
             );
         } catch (RuntimeException e) {
@@ -620,7 +598,7 @@ public class WeChatNotificationService extends NotificationListenerService {
 
     private boolean postReplacement(StatusBarNotification sbn, ParsedNotification parsed,
                                     ArrayDeque<Message> history, Notification original,
-                                    Icon senderIcon, Icon originalSenderIcon,
+                                    Icon senderIcon,
                                     ConversationBubbleState bubbleState) {
         CharSequence contentText = parsed.groupConversation
                 ? parsed.sender + ": " + parsed.text
@@ -679,14 +657,12 @@ public class WeChatNotificationService extends NotificationListenerService {
 
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         int replacementId = stableId(parsed.conversationKey);
-        Notification replacementNotification = null;
         try {
             Log.i(TAG, "post replacement notification"
                     + ", replacementId=" + replacementId
                     + ", conversation=" + parsed.conversationKey
                     + ", originalKey=" + sbn.getKey());
-            replacementNotification = builder.build();
-            nm.notify(replacementId, replacementNotification);
+            nm.notify(replacementId, builder.build());
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to post with original icons, falling back", e);
             smallIcon = Icon.createWithResource(this, R.drawable.ic_wechat_notification_small);
@@ -707,8 +683,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                         + ", replacementId=" + replacementId
                         + ", conversation=" + parsed.conversationKey
                         + ", originalKey=" + sbn.getKey());
-                replacementNotification = builder.build();
-                nm.notify(replacementId, replacementNotification);
+                nm.notify(replacementId, builder.build());
             } catch (RuntimeException fallbackError) {
                 Log.w(TAG, "failed to post fallback replacement notification", fallbackError);
                 if (Build.VERSION.SDK_INT >= 29) builder.setBubbleMetadata(null);
@@ -717,27 +692,12 @@ public class WeChatNotificationService extends NotificationListenerService {
                             + ", replacementId=" + replacementId
                             + ", conversation=" + parsed.conversationKey
                             + ", originalKey=" + sbn.getKey());
-                    replacementNotification = builder.build();
-                    nm.notify(replacementId, replacementNotification);
+                    nm.notify(replacementId, builder.build());
                 } catch (RuntimeException notificationOnlyError) {
                     Log.w(TAG, "failed to post notification-only replacement",
                             notificationOnlyError);
                     return false;
                 }
-            }
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                TrampolineBubbleHost.update(
-                        this,
-                        replacementNotification,
-                        parsed.conversationKey,
-                        parsed.title,
-                        originalSenderIcon != null ? originalSenderIcon : bubbleIcon,
-                        original.contentIntent
-                );
-            } catch (RuntimeException e) {
-                Log.w(TAG, "failed to update trampoline after message replacement", e);
             }
         }
         if (histories.size() >= 2) {
@@ -862,7 +822,6 @@ public class WeChatNotificationService extends NotificationListenerService {
         boolean testNotification = isTestNotificationId(sbn.getId());
         boolean persistedReplacement = hasPersistedReplacement(sbn.getId());
         if (shouldKeepSelfNotification(
-                sbn.getId(),
                 groupSummary,
                 testNotification,
                 persistedReplacement
@@ -885,13 +844,11 @@ public class WeChatNotificationService extends NotificationListenerService {
     }
 
     static boolean shouldKeepSelfNotification(
-            int notificationId,
             boolean groupSummary,
             boolean testNotification,
             boolean persistedReplacement
     ) {
-        return TrampolineBubbleHost.isHostNotificationId(notificationId)
-                || groupSummary
+        return groupSummary
                 || testNotification
                 || persistedReplacement;
     }

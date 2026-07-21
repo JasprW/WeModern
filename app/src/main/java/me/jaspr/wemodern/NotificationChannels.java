@@ -18,7 +18,7 @@ final class NotificationChannels {
             "wechat_messages_bubbles_quiet";
     static final String LEGACY_WECHAT_BUBBLED_MESSAGES_V2 =
             "wechat_messages_bubbles_quiet_v2";
-    static final String WECHAT_BUBBLE_HOST = "wechat_bubble_host_visual_alerts";
+    static final String LEGACY_WECHAT_BUBBLE_HOST = "wechat_bubble_host_visual_alerts";
     static final String WECHAT_INCOMING_CALLS = "wechat_calls_incoming";
     static final String WECHAT_ONGOING_CALLS = "wechat_calls_ongoing";
 
@@ -33,6 +33,7 @@ final class NotificationChannels {
         nm.deleteNotificationChannel("status_alerts");
         nm.deleteNotificationChannel("wechat_calls_live");
         nm.deleteNotificationChannel("wechat_calls_live_quiet");
+        nm.deleteNotificationChannel(LEGACY_WECHAT_BUBBLE_HOST);
         // v1.7.1 used this ID before bubble delivery was guarded by the effective system
         // permission. Channel behavior is immutable after creation, so never reuse it.
         nm.deleteNotificationChannel(LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS);
@@ -66,17 +67,6 @@ final class NotificationChannels {
         if (Build.VERSION.SDK_INT == 29) {
             bubbledMessages.setAllowBubbles(true);
         }
-        NotificationChannel bubbleHost = new NotificationChannel(
-                WECHAT_BUBBLE_HOST,
-                context.getString(R.string.channel_wechat_bubble_host),
-                bubbleHostDefaultImportance());
-        bubbleHost.setDescription(
-                context.getString(R.string.channel_wechat_bubble_host_description));
-        bubbleHost.setSound(null, null);
-        bubbleHost.enableVibration(false);
-        if (Build.VERSION.SDK_INT == 29) {
-            bubbleHost.setAllowBubbles(true);
-        }
         AudioAttributes ringtoneAudio = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setLegacyStreamType(AudioManager.STREAM_RING)
@@ -102,7 +92,6 @@ final class NotificationChannels {
         ongoingCalls.enableVibration(false);
         nm.createNotificationChannel(messages);
         nm.createNotificationChannel(bubbledMessages);
-        nm.createNotificationChannel(bubbleHost);
         nm.createNotificationChannel(incomingCalls);
         nm.createNotificationChannel(ongoingCalls);
     }
@@ -151,44 +140,6 @@ final class NotificationChannels {
         return Notification.VISIBILITY_PUBLIC;
     }
 
-    static int bubbleHostDefaultImportance() {
-        return NotificationManager.IMPORTANCE_MIN;
-    }
-
-    @SuppressWarnings("deprecation")
-    @TargetApi(29)
-    static boolean isBubbleHostBubbleAllowed(Context context) {
-        if (!ChatBubbleBehavior.isSupported(Build.VERSION.SDK_INT)) return false;
-        NotificationManager manager = context.getSystemService(NotificationManager.class);
-        if (manager == null) return false;
-        boolean systemAllowed = ChatBubbleBehavior.isSystemAllowed(context);
-        boolean allConversationsAllowed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                && manager.getBubblePreference() == NotificationManager.BUBBLE_PREFERENCE_ALL;
-        NotificationChannel hostChannel;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            hostChannel = manager.getNotificationChannel(
-                    WECHAT_BUBBLE_HOST,
-                    TrampolineBubbleHost.SHORTCUT_ID
-            );
-        } else {
-            hostChannel = manager.getNotificationChannel(WECHAT_BUBBLE_HOST);
-        }
-        boolean hostConversationAllowed = hostChannel != null && hostChannel.canBubble();
-        return isBubbleHostBubbleAllowed(
-                systemAllowed,
-                allConversationsAllowed,
-                hostConversationAllowed
-        );
-    }
-
-    static boolean isBubbleHostBubbleAllowed(
-            boolean systemAllowed,
-            boolean allConversationsAllowed,
-            boolean hostConversationAllowed
-    ) {
-        return systemAllowed && (allConversationsAllowed || hostConversationAllowed);
-    }
-
     @SuppressWarnings("deprecation")
     @TargetApi(29)
     static boolean isQuietBubblePresentationReady(Context context) {
@@ -207,26 +158,14 @@ final class NotificationChannels {
             // Android 10 and 11 expose only the app-wide permission here.
             allConversationsAllowed = bubbleReady;
         }
-        boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
-        boolean dedicatedHostEnabled = trampolineEnabled
-                && !BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(context);
-        boolean hostBubbleAllowed = dedicatedHostEnabled && isBubbleHostBubbleAllowed(context);
-        return isQuietBubblePresentationReady(
-                bubbleReady,
-                dedicatedHostEnabled,
-                allConversationsAllowed,
-                hostBubbleAllowed
-        );
+        return isQuietBubblePresentationReady(bubbleReady, allConversationsAllowed);
     }
 
     static boolean isQuietBubblePresentationReady(
             boolean bubbleReady,
-            boolean trampolineEnabled,
-            boolean allConversationsAllowed,
-            boolean hostBubbleAllowed
+            boolean allConversationsAllowed
     ) {
-        if (!bubbleReady) return false;
-        return trampolineEnabled ? hostBubbleAllowed : allConversationsAllowed;
+        return bubbleReady && allConversationsAllowed;
     }
 
     @SuppressWarnings("deprecation")
@@ -234,27 +173,4 @@ final class NotificationChannels {
         channel.setLockscreenVisibility(messageLockscreenVisibility());
     }
 
-    static boolean isBubbleHostNotificationMinimized(Context context) {
-        if (Build.VERSION.SDK_INT < 26) return false;
-        NotificationManager manager = context.getSystemService(NotificationManager.class);
-        if (manager == null) return false;
-        NotificationChannel channel = manager.getNotificationChannel(WECHAT_BUBBLE_HOST);
-        return channel != null && isMinimizedImportance(channel.getImportance());
-    }
-
-    static boolean areBubbleHostNotificationsDisabled(Context context) {
-        if (Build.VERSION.SDK_INT < 26) return false;
-        NotificationManager manager = context.getSystemService(NotificationManager.class);
-        if (manager == null) return false;
-        NotificationChannel channel = manager.getNotificationChannel(WECHAT_BUBBLE_HOST);
-        return channel != null && isDisabledImportance(channel.getImportance());
-    }
-
-    static boolean isMinimizedImportance(int importance) {
-        return importance == NotificationManager.IMPORTANCE_MIN;
-    }
-
-    static boolean isDisabledImportance(int importance) {
-        return importance == NotificationManager.IMPORTANCE_NONE;
-    }
 }

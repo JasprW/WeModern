@@ -46,7 +46,7 @@ public class NotificationChannelsTest {
         assertFalse(NotificationChannels.isMessageChannel(
                 NotificationChannels.WECHAT_ONGOING_CALLS));
         assertFalse(NotificationChannels.isMessageChannel(
-                NotificationChannels.WECHAT_BUBBLE_HOST));
+                NotificationChannels.LEGACY_WECHAT_BUBBLE_HOST));
         assertFalse(NotificationChannels.isMessageChannel(null));
     }
 
@@ -87,17 +87,10 @@ public class NotificationChannelsTest {
     }
 
     @Test
-    public void bubbleHostUsesASeparateChannelFromConversationNotifications() {
+    public void alertingAndBubbledMessagesUseDifferentChannels() {
         assertNotEquals(
                 NotificationChannels.WECHAT_MESSAGES,
-                NotificationChannels.WECHAT_BUBBLE_HOST);
-    }
-
-    @Test
-    public void bubbleHostIsMinimizedByDefault() {
-        assertEquals(
-                NotificationManager.IMPORTANCE_MIN,
-                NotificationChannels.bubbleHostDefaultImportance());
+                NotificationChannels.WECHAT_BUBBLED_MESSAGES);
     }
 
     @Test
@@ -120,54 +113,12 @@ public class NotificationChannelsTest {
     }
 
     @Test
-    public void normalBubblesBecomeQuietOnlyWhenAllConversationsCanBubble() {
+    public void bubblesBecomeQuietOnlyWhenAllConversationsCanBubble() {
         assertTrue(NotificationChannels.isQuietBubblePresentationReady(
-                true, false, true, false));
+                true, true));
         assertFalse(NotificationChannels.isQuietBubblePresentationReady(
-                true, false, false, false));
+                true, false));
         assertFalse(NotificationChannels.isQuietBubblePresentationReady(
-                false, false, true, false));
-    }
-
-    @Test
-    public void trampolineBecomesQuietOnlyWhenItsHostCanBubble() {
-        assertTrue(NotificationChannels.isQuietBubblePresentationReady(
-                true, true, false, true));
-        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
-                true, true, true, false));
-        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
-                false, true, true, true));
-    }
-
-    @Test
-    public void bubbleHostIsReadyForAllConversationsOrAnAllowedHostConversation() {
-        assertTrue(NotificationChannels.isBubbleHostBubbleAllowed(true, true, false));
-        assertTrue(NotificationChannels.isBubbleHostBubbleAllowed(true, false, true));
-        assertFalse(NotificationChannels.isBubbleHostBubbleAllowed(true, false, false));
-        assertFalse(NotificationChannels.isBubbleHostBubbleAllowed(false, true, true));
-    }
-
-    @Test
-    public void minimumImportanceCompletesBubbleHostOptimization() {
-        assertTrue(NotificationChannels.isMinimizedImportance(
-                NotificationManager.IMPORTANCE_MIN));
-        assertFalse(NotificationChannels.isMinimizedImportance(
-                NotificationManager.IMPORTANCE_NONE));
-        assertFalse(NotificationChannels.isMinimizedImportance(
-                NotificationManager.IMPORTANCE_LOW));
-        assertFalse(NotificationChannels.isMinimizedImportance(
-                NotificationManager.IMPORTANCE_HIGH));
-    }
-
-    @Test
-    public void disabledImportanceDoesNotCountAsMinimizedBubbleHost() {
-        assertTrue(NotificationChannels.isDisabledImportance(
-                NotificationManager.IMPORTANCE_NONE));
-        assertFalse(NotificationChannels.isDisabledImportance(
-                NotificationManager.IMPORTANCE_MIN));
-        assertFalse(NotificationChannels.isDisabledImportance(
-                NotificationManager.IMPORTANCE_LOW));
-        assertFalse(NotificationChannels.isDisabledImportance(
-                NotificationManager.IMPORTANCE_HIGH));
+                false, true));
     }
 }

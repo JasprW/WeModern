@@ -7,15 +7,9 @@ import org.junit.Test;
 
 public class BubbleLaunchCleanupTest {
     @Test
-    public void onlyNormalNotificationsWithBubbleMetadataAreCancelledDirectly() {
-        assertTrue(BubbleLaunchCleanup.shouldCancel(123, true));
-        assertFalse(BubbleLaunchCleanup.shouldCancel(123, false));
-        assertFalse(BubbleLaunchCleanup.shouldCancel(
-                TrampolineBubbleHost.NOTIFICATION_ID,
-                true));
-        assertFalse(BubbleLaunchCleanup.shouldCancel(
-                TrampolineBubbleHost.SECONDARY_NOTIFICATION_ID,
-                true));
+    public void onlyNotificationsWithBubbleMetadataAreCancelledDirectly() {
+        assertTrue(BubbleLaunchCleanup.shouldCancel(true));
+        assertFalse(BubbleLaunchCleanup.shouldCancel(false));
     }
 
     @Test

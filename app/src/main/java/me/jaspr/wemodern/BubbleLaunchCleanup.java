@@ -34,15 +34,10 @@ final class BubbleLaunchCleanup {
         }
         if (active == null || active.length == 0) return;
 
-        boolean hasTrampolineHost = false;
         int cleared = 0;
         for (StatusBarNotification sbn : active) {
             Notification notification = sbn.getNotification();
-            if (TrampolineBubbleHost.isHostNotificationId(sbn.getId())) {
-                hasTrampolineHost = true;
-                continue;
-            }
-            if (!shouldCancel(sbn.getId(), notification.getBubbleMetadata() != null)) continue;
+            if (!shouldCancel(notification.getBubbleMetadata() != null)) continue;
 
             String conversationId = notification.getShortcutId();
             ConversationBubbleStore.remove(conversationId);
@@ -51,10 +46,6 @@ final class BubbleLaunchCleanup {
                     sbn.getId()
             );
             manager.cancel(sbn.getTag(), sbn.getId());
-            cleared++;
-        }
-        if (hasTrampolineHost) {
-            TrampolineBubbleHost.clear(context);
             cleared++;
         }
         if (cleared > 0) {
@@ -106,7 +97,7 @@ final class BubbleLaunchCleanup {
         return context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
     }
 
-    static boolean shouldCancel(int notificationId, boolean hasBubbleMetadata) {
-        return hasBubbleMetadata && !TrampolineBubbleHost.isHostNotificationId(notificationId);
+    static boolean shouldCancel(boolean hasBubbleMetadata) {
+        return hasBubbleMetadata;
     }
 }

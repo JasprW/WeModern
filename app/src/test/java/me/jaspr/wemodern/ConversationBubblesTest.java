@@ -64,22 +64,26 @@ public class ConversationBubblesTest {
     }
 
     @Test
-    public void trampolineUsesOnlyTheDedicatedHostBubble() {
+    public void trampolineDoesNotUseTheLocalConversationActivity() {
         assertFalse(ConversationBubbles.shouldApply(37, true, true, true, true));
     }
 
     @Test
-    public void multipleConversationTrampolineNeedsExactConversationData() {
-        assertTrue(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
-                37, true, true, true, true, true, true, true));
-        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
-                30, true, true, true, true, true, true, true));
-        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
-                37, true, true, false, true, true, true, true));
-        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
-                37, true, true, true, false, true, true, true));
-        assertFalse(ConversationBubbles.shouldApplyMultipleConversationTrampoline(
-                37, true, true, true, true, true, true, false));
+    public void trampolineNeedsExactConversationData() {
+        assertTrue(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                30, true, true, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, false, true, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, false, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, false, true, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, true, false, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, true, true, false));
     }
 
     @Test
@@ -111,16 +115,16 @@ public class ConversationBubblesTest {
     }
 
     @Test
-    public void activeMultiConversationHostRequiresExactBubbledNotification() {
-        assertTrue(ConversationBubbles.isActiveMultiConversationHost(
+    public void activeTrampolineHostRequiresExactBubbledNotification() {
+        assertTrue(ConversationBubbles.isActiveTrampolineHost(
                 42, 42, "wechat:alice", "wechat:alice", true, true));
-        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+        assertFalse(ConversationBubbles.isActiveTrampolineHost(
                 41, 42, "wechat:alice", "wechat:alice", true, true));
-        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+        assertFalse(ConversationBubbles.isActiveTrampolineHost(
                 42, 42, "wechat:bob", "wechat:alice", true, true));
-        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+        assertFalse(ConversationBubbles.isActiveTrampolineHost(
                 42, 42, "wechat:alice", "wechat:alice", false, true));
-        assertFalse(ConversationBubbles.isActiveMultiConversationHost(
+        assertFalse(ConversationBubbles.isActiveTrampolineHost(
                 42, 42, "wechat:alice", "wechat:alice", true, false));
     }
 }

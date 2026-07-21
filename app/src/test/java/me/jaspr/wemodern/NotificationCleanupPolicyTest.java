@@ -9,34 +9,20 @@ import org.junit.Test;
 
 public class NotificationCleanupPolicyTest {
     @Test
-    public void trampolineHostIsNeverTreatedAsAnOrphanReplacement() {
+    public void knownSelfNotificationsAreNotTreatedAsOrphanReplacements() {
         assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
-                TrampolineBubbleHost.NOTIFICATION_ID,
-                false,
-                false,
-                false));
-        assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
-                TrampolineBubbleHost.SECONDARY_NOTIFICATION_ID,
-                false,
-                false,
-                false));
-        assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
-                123,
                 true,
                 false,
                 false));
         assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
-                123,
                 false,
                 true,
                 false));
         assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
-                123,
                 false,
                 false,
                 true));
         assertFalse(WeChatNotificationService.shouldKeepSelfNotification(
-                123,
                 false,
                 false,
                 false));

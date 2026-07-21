@@ -43,18 +43,14 @@ public class TrampolineBridgeActivityTest {
     }
 
     @Test
-    public void bridgeUsesStableIdentityOutsideExistingBubbleNamespaces() {
+    public void bridgeUsesAStableIdentityPerConversation() {
         assertEquals(
-                TrampolineBridgeActivity.requestCode(),
-                TrampolineBridgeActivity.requestCode()
-        );
-        assertNotEquals(
-                TrampolineBubbleHost.requestCode(),
-                TrampolineBridgeActivity.requestCode()
+                TrampolineBridgeActivity.requestCodeFor("wechat_alice"),
+                TrampolineBridgeActivity.requestCodeFor("wechat_alice")
         );
         assertNotEquals(
                 ConversationBubbles.requestCodeFor("wechat_alice"),
-                TrampolineBridgeActivity.requestCode()
+                TrampolineBridgeActivity.requestCodeFor("wechat_alice")
         );
         assertNotEquals(
                 TrampolineBridgeActivity.requestCodeFor("wechat_alice"),

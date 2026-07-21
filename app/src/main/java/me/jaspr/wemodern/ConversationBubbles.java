@@ -66,16 +66,10 @@ final class ConversationBubbles {
                         state == null ? null : state.conversationId
                 );
         boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
-        boolean conversationBridgeEnabled =
-                BubbleTrampolineBehavior.isConversationBridgeEnabled(context);
-        boolean multipleConversationBubblesEnabled =
-                BubbleTrampolineBehavior.isMultipleConversationBubblesEnabled(context);
-        if (shouldApplyMultipleConversationTrampoline(
+        if (shouldApplyTrampoline(
                 Build.VERSION.SDK_INT,
                 enabled,
                 trampolineEnabled,
-                conversationBridgeEnabled,
-                multipleConversationBubblesEnabled,
                 state != null,
                 icon != null,
                 state != null && state.contentIntent != null
@@ -95,6 +89,10 @@ final class ConversationBubbles {
                         notificationId,
                         bridgeIntent
                 );
+            }
+            if (bridgeIntent == null
+                    && MessageTestNotifications.isTestShortcutId(state.conversationId)) {
+                Api29Impl.applyTo(context, builder, state, icon, notificationId);
             }
             return;
         }
@@ -122,23 +120,17 @@ final class ConversationBubbles {
                 && hasIcon;
     }
 
-    static boolean shouldApplyMultipleConversationTrampoline(
+    static boolean shouldApplyTrampoline(
             int sdkInt,
             boolean enabled,
             boolean trampolineEnabled,
-            boolean conversationBridgeEnabled,
-            boolean multipleConversationBubblesEnabled,
             boolean hasState,
             boolean hasIcon,
             boolean hasConversationIntent
     ) {
         return BubbleTrampolineBehavior.isSupported(sdkInt)
                 && enabled
-                && BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(
-                        trampolineEnabled,
-                        conversationBridgeEnabled,
-                        multipleConversationBubblesEnabled
-                )
+                && trampolineEnabled
                 && hasState
                 && hasIcon
                 && hasConversationIntent;
@@ -156,26 +148,12 @@ final class ConversationBubbles {
         );
         boolean trampolineEnabled =
                 bubbleReady && BubbleTrampolineBehavior.isEnabled(context);
-        boolean multipleConversationBubbles = trampolineEnabled
-                && BubbleTrampolineBehavior.shouldUseMultipleConversationBubbles(context);
-        if (!trampolineEnabled) {
-            TrampolineBubbleHost.clear(context);
-        } else if (multipleConversationBubbles) {
-            // The per-conversation replacements become their own hosts in this mode.
-            TrampolineBubbleHost.clear(context);
-        }
         StatusBarNotification[] active = manager.getActiveNotifications();
-        if (active == null) {
-            if (trampolineEnabled) TrampolineBubbleHost.clear(context);
-            return;
-        }
+        if (active == null) return;
 
-        StatusBarNotification newestTrampolineSource = null;
-        long newestTrampolinePostTime = Long.MIN_VALUE;
         for (StatusBarNotification sbn : active) {
             Notification notification = sbn.getNotification();
             if (!NotificationChannels.isMessageChannel(notification.getChannelId())) continue;
-            if (TrampolineBubbleHost.isHostNotificationId(sbn.getId())) continue;
             boolean groupSummary =
                     (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
             if (groupSummary) continue;
@@ -200,21 +178,7 @@ final class ConversationBubbles {
             boolean channelChanged = !desiredChannelId.equals(notification.getChannelId());
 
             if (trampolineEnabled) {
-                if (!multipleConversationBubbles && TrampolineBubbleHost.isEligibleSource(
-                        notification.getChannelId(),
-                        sbn.getId(),
-                        conversationId,
-                        groupSummary
-                ) && conversationBubbleReady
-                        && (newestTrampolineSource == null
-                        || TrampolineBubbleHost.isNewerSource(
-                                sbn.getPostTime(),
-                                newestTrampolinePostTime))) {
-                    newestTrampolineSource = sbn;
-                    newestTrampolinePostTime = sbn.getPostTime();
-                }
-                boolean shouldHaveBubble = multipleConversationBubbles
-                        && conversationBubbleReady
+                boolean shouldHaveBubble = conversationBubbleReady
                         && state != null
                         && state.contentIntent != null;
                 if (!shouldUpdateActiveNotification(
@@ -255,17 +219,6 @@ final class ConversationBubbles {
                     desiredChannelId
             );
         }
-
-        if (trampolineEnabled) {
-            if (!multipleConversationBubbles && newestTrampolineSource != null) {
-                TrampolineBubbleHost.syncFromActive(
-                        context,
-                        new StatusBarNotification[] {newestTrampolineSource}
-                );
-            } else if (!multipleConversationBubbles) {
-                TrampolineBubbleHost.clear(context);
-            }
-        }
     }
 
     @TargetApi(29)
@@ -288,6 +241,7 @@ final class ConversationBubbles {
                     .setVisibility(NotificationChannels.messageLockscreenVisibility())
                     .setOnlyAlertOnce(true);
             if (enabled) {
+                builder.setBubbleMetadata(null);
                 applyTo(context, builder, state, icon, sbn.getId());
             } else {
                 builder.setBubbleMetadata(null);
@@ -310,11 +264,11 @@ final class ConversationBubbles {
     ) {
         if (conversationId == null || conversationId.isEmpty()) return false;
         // Rebuild existing metadata as well: its PendingIntent captures whether the
-        // experimental WeChat trampoline was enabled when the notification was posted.
+        // WeChat trampoline was enabled when the notification was posted.
         return enabled ? hasState && hasIcon : hasBubble;
     }
 
-    static boolean isActiveMultiConversationHost(
+    static boolean isActiveTrampolineHost(
             int notificationId,
             int expectedNotificationId,
             String shortcutId,

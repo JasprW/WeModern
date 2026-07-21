@@ -159,6 +159,7 @@ class MainActivity : ComponentActivity() {
         )
         NotificationDebugPreferences.registerListener(this, preferencesListener)
         enableEdgeToEdge()
+        BubbleTrampolineBehavior.removeLegacySingleHost(this)
         NotificationChannels.ensure(this)
         getSystemService(NotificationManager::class.java).apply {
             cancel(MessageTestNotifications.CURRENT_ID)
@@ -180,13 +181,6 @@ class MainActivity : ComponentActivity() {
                     },
                     onRequestNotifications = { requestPostNotifications() },
                     onOpenChatBubbleSettings = { openChatBubbleSettings() },
-                    onOpenBubbleHostChannelSettings = {
-                        if (NotificationChannels.isBubbleHostBubbleAllowed(this)) {
-                            openBubbleHostChannelSettings()
-                        } else {
-                            openChatBubbleSettings()
-                        }
-                    },
                     onOpenPromotedNotificationSettings = { openPromotedNotificationSettings() },
                     onRequestIgnoreBatteryOptimization = { requestIgnoreBatteryOptimization() },
                     onOpenAppSettings = { openAppSettings() },
@@ -210,38 +204,6 @@ class MainActivity : ComponentActivity() {
                         BubbleTrampolineBehavior.setEnabled(
                             this,
                             enabled && setupState.bubbleTrampolineCanBeSet,
-                        )
-                        if (!enabled) {
-                            BubbleTrampolineBehavior.setConversationBridgeEnabled(this, false)
-                            BubbleTrampolineBehavior.setMultipleConversationBubblesEnabled(
-                                this,
-                                false,
-                            )
-                        }
-                        ConversationBubbles.syncActiveNotifications(this)
-                        setupState = readSetupState()
-                        if (enabled && !setupState.bubbleHostCanBubble) {
-                            openChatBubbleSettings()
-                        }
-                    },
-                    onSetBubbleConversationBridgeEnabled = { enabled ->
-                        BubbleTrampolineBehavior.setConversationBridgeEnabled(
-                            this,
-                            enabled && setupState.bubbleTrampolineEnabled,
-                        )
-                        if (!enabled) {
-                            BubbleTrampolineBehavior.setMultipleConversationBubblesEnabled(
-                                this,
-                                false,
-                            )
-                        }
-                        ConversationBubbles.syncActiveNotifications(this)
-                        setupState = readSetupState()
-                    },
-                    onSetMultipleConversationBubblesEnabled = { enabled ->
-                        BubbleTrampolineBehavior.setMultipleConversationBubblesEnabled(
-                            this,
-                            enabled && setupState.bubbleConversationBridgeEnabled,
                         )
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
@@ -344,15 +306,6 @@ class MainActivity : ComponentActivity() {
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
             bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
-            bubbleConversationBridgeEnabled =
-                BubbleTrampolineBehavior.isConversationBridgeEnabled(this),
-            multipleConversationBubblesEnabled =
-                BubbleTrampolineBehavior.isMultipleConversationBubblesEnabled(this),
-            bubbleHostNotificationMinimized =
-                NotificationChannels.isBubbleHostNotificationMinimized(this),
-            bubbleHostNotificationsDisabled =
-                NotificationChannels.areBubbleHostNotificationsDisabled(this),
-            bubbleHostCanBubble = NotificationChannels.isBubbleHostBubbleAllowed(this),
             chatBubblesEnabled = chatBubblesEnabled,
             chatBubblesSystemAllowed = chatBubblesSystemAllowed,
             defaultPrivateBubblesEnabled =
@@ -464,29 +417,6 @@ class MainActivity : ComponentActivity() {
             startActivity(
                 Intent(Settings.ACTION_APP_NOTIFICATION_BUBBLE_SETTINGS)
                     .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-            )
-        }.onFailure {
-            runCatching {
-                startActivity(
-                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                )
-            }.onFailure {
-                openAppSettings()
-            }
-        }
-    }
-
-    private fun openBubbleHostChannelSettings() {
-        if (Build.VERSION.SDK_INT < 26) return
-        runCatching {
-            startActivity(
-                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
-                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                    .putExtra(
-                        Settings.EXTRA_CHANNEL_ID,
-                        NotificationChannels.WECHAT_BUBBLE_HOST,
-                    )
             )
         }.onFailure {
             runCatching {
@@ -613,28 +543,8 @@ class MainActivity : ComponentActivity() {
             senderAvatar,
             MessageTestNotifications.CURRENT_ID,
         )
-        val notification = builder.build()
         val notificationManager = getSystemService(NotificationManager::class.java)
-        val trampolineHostPosted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            TrampolineBubbleHost.update(
-                this,
-                notification,
-                MessageTestNotifications.SHORTCUT_ID,
-                getString(R.string.test_message_sender),
-                senderAvatar,
-                contentIntent,
-            )
-        } else {
-            false
-        }
-        if (MessageTestNotifications.shouldPostSourceNotification(trampolineHostPosted)) {
-            notificationManager.notify(MessageTestNotifications.CURRENT_ID, notification)
-        } else {
-            // The fixed host already contains the complete test message. Keeping ID 100 as a
-            // second notification would leave a status-bar entry after the bubble is opened,
-            // because unlike a real WeChat replacement it has no source-app cancel event.
-            notificationManager.cancel(MessageTestNotifications.CURRENT_ID)
-        }
+        notificationManager.notify(MessageTestNotifications.CURRENT_ID, builder.build())
         MessageTestNotifications.retainAsCachedConversationShortcut(this)
     }
 
@@ -654,11 +564,6 @@ private data class SetupState(
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
     val bubbleTrampolineEnabled: Boolean = false,
-    val bubbleConversationBridgeEnabled: Boolean = false,
-    val multipleConversationBubblesEnabled: Boolean = false,
-    val bubbleHostNotificationMinimized: Boolean = false,
-    val bubbleHostNotificationsDisabled: Boolean = false,
-    val bubbleHostCanBubble: Boolean = false,
     val chatBubblesEnabled: Boolean = false,
     val chatBubblesSystemAllowed: Boolean = false,
     val defaultPrivateBubblesEnabled: Boolean = true,
@@ -752,15 +657,12 @@ private fun WeModernApp(
     onOpenListenerSettings: () -> Unit,
     onRequestNotifications: () -> Unit,
     onOpenChatBubbleSettings: () -> Unit,
-    onOpenBubbleHostChannelSettings: () -> Unit,
     onOpenPromotedNotificationSettings: () -> Unit,
     onRequestIgnoreBatteryOptimization: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
-    onSetBubbleConversationBridgeEnabled: (Boolean) -> Unit,
-    onSetMultipleConversationBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
     onSetConversationSortOrder: (ConversationBubblePreferences.SortOrder) -> Unit,
@@ -864,11 +766,6 @@ private fun WeModernApp(
                         state = state,
                         onSetChatBubblesEnabled = onSetChatBubblesEnabled,
                         onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
-                        onSetBubbleConversationBridgeEnabled =
-                            onSetBubbleConversationBridgeEnabled,
-                        onSetMultipleConversationBubblesEnabled =
-                            onSetMultipleConversationBubblesEnabled,
-                        onOpenBubbleHostChannelSettings = onOpenBubbleHostChannelSettings,
                         onSetDefaultPrivateBubblesEnabled =
                             onSetDefaultPrivateBubblesEnabled,
                         onSetDefaultGroupBubblesEnabled = onSetDefaultGroupBubblesEnabled,
@@ -1592,9 +1489,6 @@ private fun LazyListScope.bubbleSectionItems(
     state: SetupState,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
-    onSetBubbleConversationBridgeEnabled: (Boolean) -> Unit,
-    onSetMultipleConversationBubblesEnabled: (Boolean) -> Unit,
-    onOpenBubbleHostChannelSettings: () -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
     onOpenConversationSettings: () -> Unit,
@@ -1655,61 +1549,6 @@ private fun LazyListScope.bubbleSectionItems(
             )
         }
     }
-    if (state.bubbleTrampolineAvailable) {
-        animatedSettingsPageItem(
-            key = "bubble_conversation_bridge_experimental",
-            contentType = "switch_card",
-            visible = state.chatBubblesReady && state.bubbleTrampolineEnabled,
-            spacingAfter = 8.dp,
-        ) {
-            SettingsSwitchCard(
-                title = stringResource(R.string.bubble_conversation_bridge_title),
-                supporting = stringResource(
-                    R.string.bubble_conversation_bridge_description,
-                ),
-                icon = Icons.Rounded.TouchApp,
-                checked = state.bubbleConversationBridgeEnabled,
-                enabled = state.bubbleTrampolineEnabled,
-                onCheckedChange = onSetBubbleConversationBridgeEnabled,
-            )
-        }
-    }
-    if (state.bubbleTrampolineAvailable) {
-        animatedSettingsPageItem(
-            key = "multiple_conversation_bubbles_experimental",
-            contentType = "switch_card",
-            visible = state.chatBubblesReady &&
-                    state.bubbleTrampolineEnabled &&
-                    state.bubbleConversationBridgeEnabled,
-            spacingAfter = 8.dp,
-        ) {
-            SettingsSwitchCard(
-                title = stringResource(R.string.multiple_conversation_bubbles_title),
-                supporting = stringResource(
-                    R.string.multiple_conversation_bubbles_description,
-                ),
-                iconPainter = painterResource(R.drawable.ic_material_symbol_bubble_24),
-                checked = state.multipleConversationBubblesEnabled,
-                enabled = state.bubbleConversationBridgeEnabled,
-                onCheckedChange = onSetMultipleConversationBubblesEnabled,
-            )
-        }
-    }
-    if (state.bubbleTrampolineAvailable) {
-        animatedSettingsPageItem(
-            key = "bubble_host_channel",
-            contentType = "action_card",
-            visible = state.chatBubblesReady &&
-                    state.bubbleTrampolineEnabled &&
-                    !state.multipleConversationBubblesEnabled,
-            spacingAfter = 8.dp,
-        ) {
-            BubbleHostChannelCard(
-                state = state,
-                onClick = onOpenBubbleHostChannelSettings,
-            )
-        }
-    }
     animatedSettingsPageItem(
         key = "bubble_defaults",
         contentType = "grouped_card",
@@ -1722,69 +1561,6 @@ private fun LazyListScope.bubbleSectionItems(
             onSetDefaultGroupBubblesEnabled = onSetDefaultGroupBubblesEnabled,
             onOpenConversationSettings = onOpenConversationSettings,
         )
-    }
-}
-
-@Composable
-private fun BubbleHostChannelCard(state: SetupState, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OptionLeadingIcon(icon = Icons.Rounded.Notifications)
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.bubble_host_channel_optimization_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(
-                        when {
-                            state.bubbleHostNotificationsDisabled -> {
-                                R.string.bubble_host_channel_disabled_description
-                            }
-                            !state.bubbleHostCanBubble -> {
-                                R.string.bubble_host_bubble_required_description
-                            }
-                            state.bubbleHostNotificationMinimized -> {
-                                R.string.bubble_host_channel_optimized_description
-                            }
-                            else -> R.string.bubble_host_channel_optimization_recommendation
-                        }
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Icon(
-                imageVector = if (
-                    state.bubbleHostCanBubble && state.bubbleHostNotificationMinimized
-                ) {
-                    Icons.Rounded.CheckCircle
-                } else {
-                    Icons.Rounded.ChevronRight
-                },
-                contentDescription = null,
-                tint = if (
-                    state.bubbleHostCanBubble && state.bubbleHostNotificationMinimized
-                ) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-        }
     }
 }
 
