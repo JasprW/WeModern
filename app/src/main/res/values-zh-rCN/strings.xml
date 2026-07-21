@@ -167,8 +167,6 @@
     <string name="call_action_hang_up">挂断</string>
     <string name="channel_wechat_messages">微信消息</string>
     <string name="channel_wechat_messages_description">改写后的微信消息通知</string>
-    <string name="channel_wechat_bubbled_messages">微信气泡消息</string>
-    <string name="channel_wechat_bubbled_messages_description">气泡可用时静默显示改写后的微信消息</string>
     <string name="channel_wechat_incoming_calls">微信来电提醒</string>
     <string name="channel_wechat_incoming_calls_description">收到微信语音或视频通话邀请时响铃并振动</string>
     <string name="channel_wechat_ongoing_calls">微信通话中</string>

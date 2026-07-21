@@ -32,20 +32,20 @@ Bubble。Android 11 及以上会把 conversation Bubble 作为 document task 启
 
 ## Channel 结论
 
-`wechat_messages_alerts` 与 `wechat_messages_bubbled_quiet` 不能合并为一个 channel 后只靠
-BubbleMetadata 切换。Android channel 的 importance、声音、振动和 heads-up 策略会应用
-到 channel 内所有通知，创建后还会由系统和用户持久化；BubbleMetadata 只声明某条通知
-具备 Bubble 能力，不会把高重要性 channel 的该条通知单独降级。
+常规和 trampoline 模式统一使用 `wechat_messages_alerts`。Pixel 9 Pro / API 37 对照实验
+把 Message 测试明确发布到该 importance 4 channel，同时保留 BubbleMetadata、conversation
+shortcut 和相同通知内容。系统接受后 `dumpsys notification` 显示 `FLAG_BUBBLE`、
+`isBubble=true`；屏幕只出现 Bubble flyout，SystemUI row 为 `isHeadsUpState=false`、
+`isPinned=false`，没有普通顶部 heads-up。
 
-因此常规和 trampoline 模式共用以下路由：
+这不是 BubbleMetadata 改写了 channel 行为：同一记录仍有系统 `mSound`、`mVibration`，且
+`mIsInterruptive=true`。合并的产品语义是“Bubble 由 SystemUI 用 flyout 取代普通 HUN，
+但仍按消息 channel 发声和振动”，不是静音 Bubble。
 
-- Android 允许所有会话 Bubble、Chat bubbles 已就绪且会话策略允许时，使用低重要性、
-  无声音、无振动的 `wechat_messages_bubbled_quiet`。
-- Bubble 不可用、会话禁用或 Android 只允许所选会话时，使用高重要性的
-  `wechat_messages_alerts`。Selected 模式下保持 parent channel 稳定，避免切换后丢失
-  已选择会话的 Bubble 许可。
-
-旧固定 host 的 `wechat_bubble_host_visual_alerts` 不再有发布者，升级时删除。
+升级时先把历史 quiet channel 上的活动会话通知和摘要重发到 `wechat_messages_alerts`，再
+删除 `wechat_messages_bubbled_quiet`、`wechat_messages_bubbles_quiet`、
+`wechat_messages_bubbles_quiet_v2`。旧固定 host 的 `wechat_bubble_host_visual_alerts` 也继续
+作为迁移项删除。
 
 ## 真机证据与边界
 
@@ -56,7 +56,7 @@ Pixel 9 Pro / API 37 已确认：
 - 会话收到新通知后重新展开，可转发到该会话的新聊天目标。
 - 微信进入聊天时会连续 APP_CANCEL 多个源通知。将保护范围扩大到所有真实活动 Bubble
   host 后，展开后一个 Bubble 不再关闭前一个。
-- 真正 Bubble 的替换通知使用稳定会话 ID、有效 shortcut、`FLAG_BUBBLE` 和 quiet channel；
+- 真正 Bubble 的替换通知使用稳定会话 ID、有效 shortcut、`FLAG_BUBBLE` 和统一消息 channel；
   没有重新创建固定 host。
 
 SystemUI 同时只展开一个 Bubble；“并存”指 Bubble 栈中保留多个入口。其他 Android 或

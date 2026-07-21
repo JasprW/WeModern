@@ -169,8 +169,6 @@
     <string name="call_action_hang_up">Hang up</string>
     <string name="channel_wechat_messages">WeChat messages</string>
     <string name="channel_wechat_messages_description">Rewritten WeChat message notifications</string>
-    <string name="channel_wechat_bubbled_messages">Bubbled WeChat messages</string>
-    <string name="channel_wechat_bubbled_messages_description">Silently shows rewritten WeChat messages while their bubble is available</string>
     <string name="channel_wechat_incoming_calls">Incoming WeChat calls</string>
     <string name="channel_wechat_incoming_calls_description">Rings and vibrates for incoming WeChat voice and video calls</string>
     <string name="channel_wechat_ongoing_calls">Ongoing WeChat calls</string>

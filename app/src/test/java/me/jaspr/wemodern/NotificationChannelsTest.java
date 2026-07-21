@@ -19,24 +19,18 @@ public class NotificationChannelsTest {
     }
 
     @Test
-    public void bubbleReadyConversationsUseQuietMessageChannel() {
+    public void everyConversationNotificationUsesTheAlertingMessageChannel() {
         assertEquals(
-                NotificationChannels.WECHAT_MESSAGES,
-                NotificationChannels.messageChannelId(false, true));
-        assertEquals(
-                NotificationChannels.WECHAT_BUBBLED_MESSAGES,
-                NotificationChannels.messageChannelId(true, true));
-        assertEquals(
-                NotificationChannels.WECHAT_MESSAGES,
-                NotificationChannels.messageChannelId(true, false));
+                "wechat_messages_alerts",
+                NotificationChannels.WECHAT_MESSAGES);
     }
 
     @Test
-    public void alertingQuietAndLegacyConversationChannelsAreRecognizedAsMessages() {
+    public void currentAndLegacyConversationChannelsAreRecognizedAsMessages() {
         assertTrue(NotificationChannels.isMessageChannel(
                 NotificationChannels.WECHAT_MESSAGES));
         assertTrue(NotificationChannels.isMessageChannel(
-                NotificationChannels.WECHAT_BUBBLED_MESSAGES));
+                NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES));
         assertTrue(NotificationChannels.isMessageChannel(
                 NotificationChannels.LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS));
         assertTrue(NotificationChannels.isMessageChannel(
@@ -71,13 +65,10 @@ public class NotificationChannelsTest {
     }
 
     @Test
-    public void incomingCallsAreHighPriorityAndOngoingCallsUseDefaultPriority() {
+    public void messagesAndIncomingCallsAreHighPriorityAndOngoingCallsUseDefaultPriority() {
         assertEquals(
                 NotificationManager.IMPORTANCE_HIGH,
                 NotificationChannels.messageDefaultImportance());
-        assertEquals(
-                NotificationManager.IMPORTANCE_LOW,
-                NotificationChannels.bubbledMessageDefaultImportance());
         assertEquals(
                 NotificationManager.IMPORTANCE_HIGH,
                 NotificationChannels.incomingCallDefaultImportance());
@@ -87,14 +78,7 @@ public class NotificationChannelsTest {
     }
 
     @Test
-    public void alertingAndBubbledMessagesUseDifferentChannels() {
-        assertNotEquals(
-                NotificationChannels.WECHAT_MESSAGES,
-                NotificationChannels.WECHAT_BUBBLED_MESSAGES);
-    }
-
-    @Test
-    public void stableQuietChannelDoesNotReuseEitherLegacyIdentity() {
+    public void allQuietMessageChannelIdentitiesAreMigrationOnly() {
         assertEquals(
                 "wechat_messages_bubbles_quiet",
                 NotificationChannels.LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS);
@@ -103,22 +87,15 @@ public class NotificationChannelsTest {
                 NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES_V2);
         assertEquals(
                 "wechat_messages_bubbled_quiet",
-                NotificationChannels.WECHAT_BUBBLED_MESSAGES);
+                NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES);
         assertNotEquals(
                 NotificationChannels.LEGACY_WECHAT_BUBBLE_MODE_CONVERSATIONS,
-                NotificationChannels.messageChannelId(true, true));
+                NotificationChannels.WECHAT_MESSAGES);
         assertNotEquals(
                 NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES_V2,
-                NotificationChannels.messageChannelId(true, true));
-    }
-
-    @Test
-    public void bubblesBecomeQuietOnlyWhenAllConversationsCanBubble() {
-        assertTrue(NotificationChannels.isQuietBubblePresentationReady(
-                true, true));
-        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
-                true, false));
-        assertFalse(NotificationChannels.isQuietBubblePresentationReady(
-                false, true));
+                NotificationChannels.WECHAT_MESSAGES);
+        assertNotEquals(
+                NotificationChannels.LEGACY_WECHAT_BUBBLED_MESSAGES,
+                NotificationChannels.WECHAT_MESSAGES);
     }
 }

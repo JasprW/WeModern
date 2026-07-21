@@ -156,7 +156,21 @@ final class ConversationBubbles {
             if (!NotificationChannels.isMessageChannel(notification.getChannelId())) continue;
             boolean groupSummary =
                     (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
-            if (groupSummary) continue;
+            if (groupSummary) {
+                if (!NotificationChannels.WECHAT_MESSAGES.equals(notification.getChannelId())) {
+                    updateBubbleMetadata(
+                            context,
+                            manager,
+                            sbn,
+                            null,
+                            null,
+                            null,
+                            false,
+                            NotificationChannels.WECHAT_MESSAGES
+                    );
+                }
+                continue;
+            }
 
             String conversationId = notification.getShortcutId();
             ConversationBubbleState state = ConversationBubbleStore.get(conversationId);
@@ -171,10 +185,7 @@ final class ConversationBubbles {
                     ConversationBubblePreferences.isEnabled(context, conversationId);
             boolean conversationBubbleEnabled = enabled && conversationPreferenceEnabled;
             boolean conversationBubbleReady = bubbleReady && conversationPreferenceEnabled;
-            String desiredChannelId = NotificationChannels.messageChannelId(
-                    context,
-                    conversationId
-            );
+            String desiredChannelId = NotificationChannels.WECHAT_MESSAGES;
             boolean channelChanged = !desiredChannelId.equals(notification.getChannelId());
 
             if (trampolineEnabled) {

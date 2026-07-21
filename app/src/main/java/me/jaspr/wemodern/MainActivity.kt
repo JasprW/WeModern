@@ -161,6 +161,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BubbleTrampolineBehavior.removeLegacySingleHost(this)
         NotificationChannels.ensure(this)
+        ConversationBubbles.syncActiveNotifications(this)
+        NotificationChannels.deleteLegacyMessageChannels(this)
         getSystemService(NotificationManager::class.java).apply {
             cancel(MessageTestNotifications.CURRENT_ID)
             cancel(CallTestNotifications.LEGACY_VIDEO_ID)
@@ -520,7 +522,7 @@ class MainActivity : ComponentActivity() {
         ConversationBubbleStore.update(bubbleState)
         val builder = Notification.Builder(
             this,
-            NotificationChannels.messageChannelId(this, MessageTestNotifications.SHORTCUT_ID),
+            NotificationChannels.WECHAT_MESSAGES,
         )
             .setSmallIcon(smallIcon)
             .setLargeIcon(senderAvatar)

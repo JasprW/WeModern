@@ -239,6 +239,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         BubbleTrampolineBehavior.removeLegacySingleHost(this);
         NotificationChannels.ensure(this);
         ConversationBubbles.syncActiveNotifications(this);
+        NotificationChannels.deleteLegacyMessageChannels(this);
         if (cancelLogWatcher != null) return;
         cancelLogWatcher = new NotificationCancelLogWatcher(
                 this::handleNotificationCancelLog,
@@ -604,10 +605,7 @@ public class WeChatNotificationService extends NotificationListenerService {
                 ? parsed.sender + ": " + parsed.text
                 : parsed.text;
         Icon smallIcon = resolveSmallIcon(original);
-        String messageChannelId = NotificationChannels.messageChannelId(
-                this,
-                parsed.conversationKey
-        );
+        String messageChannelId = NotificationChannels.WECHAT_MESSAGES;
         Notification.Builder builder = new Notification.Builder(this, messageChannelId)
                 .setSmallIcon(smallIcon)
                 .setContentTitle(parsed.title)

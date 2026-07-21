@@ -34,9 +34,9 @@
 
 Android 10（API 29）及以上可为每个允许的会话附加 `BubbleMetadata`。气泡内容是 `BubbleConversationActivity`：显示本地最近消息快照，并通过微信原始 `PendingIntent` 打开精确聊天。气泡 activity 可嵌入、可调整大小、以 document 模式多实例启动，并可在进程重建后恢复状态。
 
-气泡依赖两层开关：Android 的全局/选中会话气泡许可，以及 WeModern 的“Chat bubbles”开关。Bubble 实际可展示、Android 允许所有会话气泡且会话策略允许时，替换消息切换到 `wechat_messages_bubbled_quiet`：默认 `IMPORTANCE_LOW`、无声音、无振动，因此不会再额外显示 heads-up；关闭 Chat bubbles、会话策略禁用、系统 Bubble 不可用或 Android 只允许所选会话时，消息仍使用 `wechat_messages_alerts` 高重要性 channel。常规模式和 trampoline 模式使用同一规则，避免切换 parent channel 破坏“仅所选会话”的许可。升级时删除 v1.7.1 未做许可保护的 `wechat_messages_bubbles_quiet` 和临时使用过的 `wechat_messages_bubbles_quiet_v2`；稳定 ID 不包含版本后缀，也不复用 Android 已保存旧行为和用户设置的历史 ID。
+气泡依赖两层开关：Android 的全局/选中会话气泡许可，以及 WeModern 的“Chat bubbles”开关。所有替换消息统一使用 `wechat_messages_alerts` 高重要性 channel，不再根据 Bubble 状态切换 parent channel。Pixel 9 Pro / API 37 的对照实验确认：通知实际为 importance 4、带 BubbleMetadata 且被系统标记为 `FLAG_BUBBLE` 时，SystemUI 只显示 Bubble flyout，通知 row 的 `isHeadsUpState=false`、`isPinned=false`，不会再显示普通顶部 heads-up；channel 的系统声音和振动仍然生效。未成为 Bubble 的消息继续按同一 channel 正常提醒。
 
-Pixel 9 Pro / API 37 的升级安装后，`dumpsys notification` 已确认稳定 `wechat_messages_bubbled_quiet` 为 importance 2、sound null、vibration disabled；旧 `wechat_messages_bubbles_quiet` 与临时 `wechat_messages_bubbles_quiet_v2` 均为 deleted。旧无后缀 ID 仍保留 importance 3、系统声音、振动和用户锁定字段，证明它不能安全复用。真实新微信消息的无 heads-up 视觉回归仍需在设备解锁后完成。
+升级时先把仍在历史 quiet channel 上的活动会话通知和消息摘要重发到 `wechat_messages_alerts`，再删除 `wechat_messages_bubbled_quiet`、`wechat_messages_bubbles_quiet` 与 `wechat_messages_bubbles_quiet_v2`。这样只保留一个消息分类，并尽量避免升级时丢失现有 Bubble。
 
 会话默认按私聊和群聊分别配置；每个已知会话还可覆盖为“始终允许”或“永不允许”。会话身份由微信通知提供的标题构成（`wechat:<title>`），昵称、群名或语言变化会使旧覆盖失配；这不是微信稳定内部 ID。
 
@@ -50,7 +50,7 @@ Bridge session 以 task ID 和会话 ID 并行跟踪，移除一个 task 不会�
 
 Pixel 9 Pro / API 37 已完成双会话真机验收：不同会话 Bubble 可同时保留、分别进入对应聊天，直接 Back 收起当前 Bubble；后续消息更新后重新展开会进入该会话的新目标。此前“一开后一个就关前一个”的问题已通过扩大 APP_CANCEL 期间的活动 Bubble host 保护范围修复。证据与平台风险见 [Trampoline PendingIntent bridge](explorations/2026-07-20-trampoline-pending-intent-bridge.md)和[多会话 Trampoline Bubble](explorations/2026-07-21-multi-conversation-trampoline-bubbles.md)。
 
-trampoline 与常规模式共享两条消息 channel。`BubbleMetadata` 只决定通知是否具备 Bubble 展示能力，不能逐条覆盖 channel 的 importance、声音或 heads-up；这些视觉和听觉行为对 channel 内全部通知生效，并在 channel 创建后由系统和用户持久化。因此不能只保留一条 `wechat_messages_alerts` 再靠 metadata 静音：实际可 Bubble 且 Android 允许所有会话时必须使用 `wechat_messages_bubbled_quiet`，其他情况使用 `wechat_messages_alerts`。旧固定 host channel、设置卡、shortcut 和通知 ID 均在升级时删除。
+trampoline 与常规模式共享唯一消息 channel `wechat_messages_alerts`。这里依赖的是 Pixel SystemUI 对“已实际启动的 Bubble”抑制普通 heads-up 的展示规则，不是 BubbleMetadata 改写了 channel importance；声音、振动和用户对该 channel 的设置仍统一适用于 Bubble 与非 Bubble 消息。旧 quiet 消息 channel、固定 host channel、设置卡、shortcut 和通知 ID 均在升级时删除。
 
 Message 测试始终发布固定通知 ID `100` 并使用 `ic_wechat_notification_small`。trampoline 开启时测试通知仍使用本地 Bubble 内容，因为它没有微信创建的精确会话 PendingIntent；真实微信通知才进入 Bridge 路径。
 
@@ -102,7 +102,7 @@ Message 测试通知 ID 始终为 `100`，小图标必须是 `R.drawable.ic_wech
 | Android 12+ bubble 启动缺少嵌入任务选项 | bubble Activity `PendingIntent` 使用 mutable flag，删除回调保持 immutable。 |
 | 多个 trampoline 会话互相结束 WeChat task | 每个会话使用独立通知 host、document Bridge task 与按 task / 会话隔离的 session 状态。 |
 | 微信批量撤销源通知误杀其他 trampoline Bubble | 嵌入期间保留所有 ID、shortcut、BubbleMetadata 和 `FLAG_BUBBLE` 都匹配的活动 host；普通通知继续同步移除。 |
-| 气泡关闭后普通通知仍静默 | 依据全局准备状态和会话策略切换 quiet/alerting message channel。 |
+| Bubble 未获准时低重要性消息无提醒 | 所有消息统一使用 alerting channel；真正 Bubble 由已验证的 SystemUI flyout 取代普通 HUN。 |
 | 群聊头像误用于其他会话/发送者 | 快捷方式图标按会话缓存，避免复用群聊发送者头像。 |
 | 某些取消事件没有 listener 回调 | 可选日志监视加持久化 replacement 映射补偿清理。 |
 

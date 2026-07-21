@@ -46,14 +46,14 @@ separate Bubble entries. Returning from the chat collapses the Bubble instead
 of deleting it. Other Android or WeChat versions can still reuse a full-screen
 task because WeModern cannot rewrite the immutable target's private flags.
 
-Eligible Bubble messages use `wechat_messages_bubbled_quiet`, a low-importance
-channel without sound or vibration, only when Android allows all conversations
-to Bubble. All other messages use the high-importance
-`wechat_messages_alerts` channel. These channels cannot be combined: Bubble
-metadata does not override a channel's importance, sound, vibration, or
-heads-up behavior for an individual notification. Conversation notifications
-request full lock-screen visibility by default; the user's Android notification
-and lock-screen settings remain authoritative.
+All rewritten messages use the high-importance `wechat_messages_alerts`
+channel. Pixel 9 Pro / API 37 validation confirmed that when Android accepts a
+notification as a Bubble, SystemUI shows the Bubble flyout and suppresses the
+ordinary pinned heads-up view even on this channel. The channel's configured
+sound and vibration still apply. Legacy quiet Bubble channels are migrated and
+deleted. Conversation notifications request full lock-screen visibility by
+default; the user's Android notification and lock-screen settings remain
+authoritative.
 WeModern's own Chat bubbles switch controls whether
 rewritten notifications include bubble metadata; Android separately controls
 whether all or only selected conversations may bubble. When the WeModern switch
@@ -148,8 +148,7 @@ update a Bubble. A disabled conversation keeps its normal heads-up notification
 but cannot create or update a Bubble. The Message test always remains
 notification ID `100` and uses the local test Bubble because it does not carry a
 WeChat-created conversation action. With Android set to Selected conversations,
-each real conversation may need to be allowed separately. Selecting All
-conversations is also required for the low-importance quiet message channel.
+each real conversation may need to be allowed separately.
 
 To enable synchronous removal of rewritten WeChat notifications when WeChat
 cancels its original notification, also grant log access and enable debug
