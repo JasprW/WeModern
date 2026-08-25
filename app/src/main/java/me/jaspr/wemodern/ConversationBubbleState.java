@@ -95,6 +95,16 @@ final class ConversationBubbleState {
         );
     }
 
+    ConversationBubbleState withoutMessages() {
+        if (messages.isEmpty()) return this;
+        return new ConversationBubbleState(
+                conversationId,
+                title,
+                Collections.emptyList(),
+                contentIntent
+        );
+    }
+
     void writeTo(Intent intent) {
         ArrayList<String> senders = new ArrayList<>(messages.size());
         ArrayList<String> texts = new ArrayList<>(messages.size());

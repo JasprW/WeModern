@@ -207,6 +207,46 @@ public class WeChatNotificationService extends NotificationListenerService {
         return NotificationDebugPreferences.isRewriteEnabled(this);
     }
 
+    static void markConversationOpenedFromBubble(String conversationId) {
+        markConversationOpened(conversationId, "trampoline bubble");
+    }
+
+    static void markConversationOpened(String conversationId, String source) {
+        if (TextUtils.isEmpty(conversationId)) return;
+        boolean clearedSnapshot = ConversationBubbleStore.clearMessages(conversationId);
+        WeChatNotificationService service = activeInstance;
+        if (service == null) {
+            Log.i(TAG, "marked conversation opened without active listener"
+                    + ", conversation=" + conversationId
+                    + ", source=" + source
+                    + ", clearedSnapshot=" + clearedSnapshot);
+            return;
+        }
+        if (Looper.myLooper() == service.mainHandler.getLooper()) {
+            service.clearOpenedConversationHistory(conversationId, source, clearedSnapshot);
+        } else {
+            service.mainHandler.post(() ->
+                    service.clearOpenedConversationHistory(
+                            conversationId,
+                            source,
+                            clearedSnapshot
+                    ));
+        }
+    }
+
+    private void clearOpenedConversationHistory(
+            String conversationId,
+            String source,
+            boolean clearedSnapshot
+    ) {
+        boolean clearedHistory = histories.remove(conversationId) != null;
+        Log.i(TAG, "marked conversation opened"
+                + ", conversation=" + conversationId
+                + ", source=" + source
+                + ", clearedHistory=" + clearedHistory
+                + ", clearedSnapshot=" + clearedSnapshot);
+    }
+
     private void captureActiveWeChatNotifications(StatusBarNotification[] active) {
         if (!isCaptureLoggingEnabled() || active == null) return;
         RankingMap rankingMap = getCurrentRanking();
@@ -302,9 +342,14 @@ public class WeChatNotificationService extends NotificationListenerService {
             originalToConversation.remove(key);
             if (shouldPreserveMessageReplacement(conversationKey)) {
                 forgetReplacement(CancelEventKey.from(sbn));
+                boolean clearedHistory = clearPreservedConversationHistoryIfRead(
+                        conversationKey,
+                        "original removal"
+                );
                 Log.i(TAG, "preserve trampoline bubble host after original removal"
                         + ", key=" + key
                         + ", conversation=" + conversationKey
+                        + ", clearedHistory=" + clearedHistory
                         + ", reason=" + reasonName(reason));
                 return;
             }
@@ -358,9 +403,14 @@ public class WeChatNotificationService extends NotificationListenerService {
         removePersistedReplacement(eventKey);
         originalToConversation.remove(replacement.originalKey);
         if (shouldPreserveMessageReplacement(replacement.conversationKey)) {
+            boolean clearedHistory = clearPreservedConversationHistoryIfRead(
+                    replacement.conversationKey,
+                    "app cancel log"
+            );
             Log.i(TAG, "preserve trampoline bubble host after app cancel log"
                     + ", key=" + replacement.originalKey
                     + ", conversation=" + replacement.conversationKey
+                    + ", clearedHistory=" + clearedHistory
                     + ", reason=" + reasonName(reason));
             return;
         }
@@ -401,6 +451,29 @@ public class WeChatNotificationService extends NotificationListenerService {
                 BubbleTrampolineBehavior.isEnabled(this),
                 isActiveTrampolineBubbleHost(conversationKey)
         );
+    }
+
+    private boolean clearPreservedConversationHistoryIfRead(
+            String conversationKey,
+            String source
+    ) {
+        if (!BubbleLaunchCleanup.shouldClearPreservedConversationHistory(
+                this,
+                conversationKey
+        )) {
+            Log.d(TAG, "keep unrelated conversation history during embedded WeChat launch"
+                    + ", conversation=" + conversationKey
+                    + ", source=" + source);
+            return false;
+        }
+        boolean clearedHistory = histories.remove(conversationKey) != null;
+        boolean clearedSnapshot = ConversationBubbleStore.clearMessages(conversationKey);
+        Log.i(TAG, "clear read conversation history while preserving bubble host"
+                + ", conversation=" + conversationKey
+                + ", source=" + source
+                + ", clearedHistory=" + clearedHistory
+                + ", clearedSnapshot=" + clearedSnapshot);
+        return clearedHistory || clearedSnapshot;
     }
 
     private boolean isActiveTrampolineBubbleHost(String conversationKey) {

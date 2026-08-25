@@ -57,33 +57,41 @@ public class ConversationBubblesTest {
 
     @Test
     public void bubbleMetadataRequiresTheLocalFeatureSwitch() {
-        assertFalse(ConversationBubbles.shouldApply(37, false, false, true, true));
-        assertTrue(ConversationBubbles.shouldApply(37, true, false, true, true));
-        assertFalse(ConversationBubbles.shouldApply(37, true, false, false, true));
-        assertFalse(ConversationBubbles.shouldApply(37, true, false, true, false));
+        assertFalse(ConversationBubbles.shouldApply(37, false, false, false, true, true));
+        assertTrue(ConversationBubbles.shouldApply(37, true, false, false, true, true));
+        assertFalse(ConversationBubbles.shouldApply(37, true, false, false, false, true));
+        assertFalse(ConversationBubbles.shouldApply(37, true, false, false, true, false));
     }
 
     @Test
     public void trampolineDoesNotUseTheLocalConversationActivity() {
-        assertFalse(ConversationBubbles.shouldApply(37, true, true, true, true));
+        assertFalse(ConversationBubbles.shouldApply(37, true, true, false, true, true));
     }
 
     @Test
     public void trampolineNeedsExactConversationData() {
         assertTrue(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, true, true, true));
+                37, true, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                30, true, true, true, true, true));
+                30, true, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, false, true, true, true, true));
+                37, false, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, false, false, true, true, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, false, false, true, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, false, true, false, true));
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, false, true, true, false));
+    }
+
+    @Test
+    public void fullScreenWeChatSuppressesBothBubbleImplementations() {
+        assertFalse(ConversationBubbles.shouldApply(
                 37, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, false, true, true));
-        assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, true, false, true));
-        assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, true, true, false));
+                37, true, true, true, true, true, true));
     }
 
     @Test

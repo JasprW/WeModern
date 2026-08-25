@@ -5,6 +5,7 @@ import static android.app.PendingIntent.FLAG_UPDATE_CURRENT;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -55,5 +56,17 @@ public class WeChatLaunchProxyActivityTest {
                 WeChatLaunchProxyActivity.requestCodeFor(hangUp));
         assertFalse(WeChatLaunchProxyActivity.isIncomingCallLaunchKey(content));
         assertFalse(WeChatLaunchProxyActivity.isIncomingCallLaunchKey(hangUp));
+    }
+
+    @Test
+    public void messageLaunchKeyCarriesTheExactConversationId() {
+        assertEquals(
+                "wechat:alice",
+                WeChatLaunchProxyActivity.messageConversationId("message:wechat:alice")
+        );
+        assertNull(WeChatLaunchProxyActivity.messageConversationId("message:"));
+        assertNull(WeChatLaunchProxyActivity.messageConversationId("message-summary"));
+        assertNull(WeChatLaunchProxyActivity.messageConversationId("call:incoming:answer"));
+        assertNull(WeChatLaunchProxyActivity.messageConversationId(null));
     }
 }

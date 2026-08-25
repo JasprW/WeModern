@@ -66,10 +66,16 @@ final class ConversationBubbles {
                         state == null ? null : state.conversationId
                 );
         boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
+        boolean weChatForeground = WeChatForegroundState.isWeChatForeground();
+        if (enabled && weChatForeground && state != null) {
+            Log.i(TAG, "suppress bubble while full-screen WeChat is foreground"
+                    + ", conversation=" + state.conversationId);
+        }
         if (shouldApplyTrampoline(
                 Build.VERSION.SDK_INT,
                 enabled,
                 trampolineEnabled,
+                weChatForeground,
                 state != null,
                 icon != null,
                 state != null && state.contentIntent != null
@@ -100,6 +106,7 @@ final class ConversationBubbles {
                 Build.VERSION.SDK_INT,
                 enabled,
                 trampolineEnabled,
+                weChatForeground,
                 state != null,
                 icon != null
         )) return;
@@ -110,12 +117,14 @@ final class ConversationBubbles {
             int sdkInt,
             boolean enabled,
             boolean trampolineEnabled,
+            boolean weChatForeground,
             boolean hasState,
             boolean hasIcon
     ) {
         return isSupported(sdkInt)
                 && enabled
                 && !trampolineEnabled
+                && !weChatForeground
                 && hasState
                 && hasIcon;
     }
@@ -124,6 +133,7 @@ final class ConversationBubbles {
             int sdkInt,
             boolean enabled,
             boolean trampolineEnabled,
+            boolean weChatForeground,
             boolean hasState,
             boolean hasIcon,
             boolean hasConversationIntent
@@ -131,6 +141,7 @@ final class ConversationBubbles {
         return BubbleTrampolineBehavior.isSupported(sdkInt)
                 && enabled
                 && trampolineEnabled
+                && !weChatForeground
                 && hasState
                 && hasIcon
                 && hasConversationIntent;
@@ -148,6 +159,8 @@ final class ConversationBubbles {
         );
         boolean trampolineEnabled =
                 bubbleReady && BubbleTrampolineBehavior.isEnabled(context);
+        boolean bubbleAllowedInCurrentForeground =
+                !WeChatForegroundState.isWeChatForeground();
         StatusBarNotification[] active = manager.getActiveNotifications();
         if (active == null) return;
 
@@ -183,8 +196,12 @@ final class ConversationBubbles {
             boolean hasBubble = currentBubble != null;
             boolean conversationPreferenceEnabled =
                     ConversationBubblePreferences.isEnabled(context, conversationId);
-            boolean conversationBubbleEnabled = enabled && conversationPreferenceEnabled;
-            boolean conversationBubbleReady = bubbleReady && conversationPreferenceEnabled;
+            boolean conversationBubbleEnabled = enabled
+                    && conversationPreferenceEnabled
+                    && bubbleAllowedInCurrentForeground;
+            boolean conversationBubbleReady = bubbleReady
+                    && conversationPreferenceEnabled
+                    && bubbleAllowedInCurrentForeground;
             String desiredChannelId = NotificationChannels.WECHAT_MESSAGES;
             boolean channelChanged = !desiredChannelId.equals(notification.getChannelId());
 

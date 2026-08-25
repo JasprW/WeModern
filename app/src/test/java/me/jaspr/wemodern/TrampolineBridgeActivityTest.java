@@ -64,4 +64,30 @@ public class TrampolineBridgeActivityTest {
         assertFalse(TrampolineBridgeActivity.shouldCollapseAfterTarget(true, false));
         assertFalse(TrampolineBridgeActivity.shouldCollapseAfterTarget(false, true));
     }
+
+    @Test
+    public void bridgeCollapsesOnlyForItsBubbledConversationResult() {
+        int requestCode = TrampolineBridgeActivity.targetResultRequestCode();
+
+        assertTrue(TrampolineBridgeActivity.shouldCollapseAfterTargetResult(
+                requestCode,
+                true,
+                true
+        ));
+        assertFalse(TrampolineBridgeActivity.shouldCollapseAfterTargetResult(
+                requestCode + 1,
+                true,
+                true
+        ));
+        assertFalse(TrampolineBridgeActivity.shouldCollapseAfterTargetResult(
+                requestCode,
+                false,
+                true
+        ));
+        assertFalse(TrampolineBridgeActivity.shouldCollapseAfterTargetResult(
+                requestCode,
+                true,
+                false
+        ));
+    }
 }

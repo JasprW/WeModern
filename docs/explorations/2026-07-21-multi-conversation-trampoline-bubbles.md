@@ -76,6 +76,119 @@ shortcut、BubbleMetadata 与 `FLAG_BUBBLE` 的 trampoline host；它不再依�
 无持久映射但活动 trampoline host 为 true 的组合；单会话与精确三会话交互仍作为安装后的
 真机回归项。
 
+host 保留也改变了旧同步移除逻辑的语义。微信进入某个聊天时会批量 APP_CANCEL 多个会话，
+因此不能再把任意源通知 removal 当作精确的“该会话已打开”信号；直接恢复旧的
+`histories.remove()` / `ConversationBubbleStore.remove()` 会同时删除其他仍未阅读的 Bubble。
+但完全跳过清理又会让被打开会话的 `MessagingStyle` 历史持续累积，下一条新消息重新显示已看过
+的内容。
+
+当前实现使用两层已读边界。Bridge 确认 Bubble 启动且微信会话 token 提交成功后，
+立即使用自带 conversationId 清空被点击会话的服务内消息历史和 Bubble 消息快照。同时
+5 秒 APP_CANCEL 保护窗口也保存这个 conversationId：窗口内只允许被点击会话清历史，
+微信同批撤销的其他 Bubble 仍保留未读内容。窗口外的正常 sync removal，或者全屏微信
+前台导致的移除，即使活动 Bubble host 需继续保留，也会清空相应会话历史。状态对象
+本身不删除，title、shortcut 对应关系、最新 immutable token、活动通知 host 与 task 均继续
+保留。这样把“Bubble 还存活”与“旧消息是否已读”分成独立生命周期。
+
+## 2026-08-25 普通 WeModern 通知点击的已读缺口
+
+静态检查确认，“从 WeModern 普通通知进入微信后，下一条通知仍包含旧历史”有一条
+不依赖设备日志即可证实的代码竞态：
+
+1. 消息通知使用 `setAutoCancel(true)`，content intent 是
+   `WeChatLaunchProxyActivity.wrap(..., "message:" + conversationKey, target)`。
+2. Proxy 只检查来电 launch key；消息 launch key 虽然已携带精确 conversationId，但没有解析，
+   也没有调用已存在的会话已打开清理入口。Proxy 只执行 `BubbleLaunchCleanup.clear()`、
+   发送微信 target 然后 finish。
+3. Android 点击后的 auto-cancel 会进入 WeModern 自通知 removal 分支。该分支会删除
+   `ConversationBubbleStore` 状态，并通过 `forgetReplacementsForReplacementId()` 删除内存和
+   持久化 replacement 映射，但没有删除服务内 `histories[conversationId]`。
+4. 微信随后 APP_CANCEL 原通知时，服务已无法通过 replacement 映射恢复 conversationId，
+   因此 sync removal 无法补做历史清理。后续新消息会继续 append 到旧 `histories` 并重新显示
+   已读内容。
+
+现已把 `markConversationOpenedFromBubble()` 的底层实现泛化为会话级入口。Proxy 从
+`message:<conversationId>` 提取精确 ID，并只在微信 PendingIntent 成功发送后立即清空该会话
+`histories` 与快照；发送失败而回退到微信 Home 时不标记精确会话已打开。该主动
+已读边界不再依赖随后 auto-cancel / APP_CANCEL 的回调顺序。当前手机未连接，代码与
+本地单测完成后仍需下次连接设备做真实通知点击回归。
+
+同一轮测试还确认了另一条微信返回路径。第一次 Back 的输入事件后，微信以 app-request 在
+同一个 Bubble task 中启动 `LauncherUI`，随后结束 `ChattingMainUI`；旧实现只有 Bridge 的
+`onResume` 收起逻辑，因此必须第二次 Back 退出微信 Home 后才能获得控制。这不是 host 清理
+修复刻意加入的行为，而是此前未覆盖的微信内部返回栈分支。
+
+Bridge 现在使用 `startIntentSenderForResult` 转发会话 token。Pixel 9 Pro / API 37 上，
+`ChattingMainUI` 结束时 result 会在 `LauncherUI` 仍位于 Bridge 之上时送达；Bridge 通过匹配
+task ID 的 `ActivityManager.AppTask` 启动带 `CLEAR_TOP | SINGLE_TOP` 的内部 collapse intent，
+清掉其上的 `LauncherUI`，再由恢复的 Bridge 调用 `moveTaskToBack(true)`。系统日志顺序为
+`ChattingMainUI → LauncherUI → COLLAPSE_TRAMPOLINE_AFTER_TARGET_RESULT`，用户确认第一次 Back
+直接收起 Bubble。若某个系统只在 Bridge 已恢复后才投递结果，原有 `onResume` 路径仍会收起，
+但无法保证提前清掉微信 Home；这仍是跨应用 immutable Activity token 的平台边界。
+
+## 2026-08-25 展开后偶发自动退出
+
+Pixel 9 Pro / API 37 的 events buffer 保留了一次与“点击 Bubble 后立即退出并消失”
+高度一致的完整窗口时序：
+
+- `10:11:27.996`：会话 host `866529438` 仍带 `FLAG_BUBBLE` 并成功更新。
+- `10:11:28.042`：SystemUI 创建 task `23663` 及 `TrampolineBridgeActivity`。
+- `10:11:28.074`：同一 task 内成功创建微信 `ChattingMainUI`；`10:11:28.959`
+  聊天窗口已获得 focus。
+- `10:11:28.571`：微信批量 APP_CANCEL 源通知，但 WeModern host 没有在这一时刻
+  被取消，证明现有 host 保留分支已生效，同步移除不是本次退出的起点。
+- `10:11:29.905`：聊天窗口无用户 Back 记录即失去 focus；`10:11:29.965` task 被
+  移到后台，原全屏应用恢复前台。
+- `10:11:30.905`：Android 以 `remove-task-through-hierarchyOp` 同时销毁 Bridge 和
+  `ChattingMainUI`。之后 `10:11:30.917` 才触发 Bubble delete intent，由 WeModern 取消 host；
+  `10:11:31.817` task 完全移除。
+
+因此 host 通知取消是 SystemUI 删除 Bubble 之后的结果，不是原因。当时 Bridge 没有
+`onResume` 记录，而代码中另一条可在 Bridge 处于 stopped 时把 task 移到后台的路径是
+`onActivityResult → requestCollapseAtBridgeRoot() → collapseBubble()` 的 AppTask 查找失败兜底。
+日志中也没有成功执行 `CLEAR_TOP` collapse intent 应产生的 Bridge `wm_new_intent`，与该兜底
+路径一致。现有 main log buffer 已无当时的 `WeModern` 应用日志，因此尚不能直接证明
+是微信过早返回 result，但这是当前证据最支持的原因。
+
+本轮只记录调查，未改动返回栈。后续修复应避免在 Bridge 未恢复且无法找到 Bubble
+`AppTask` 时立即执行 `moveTaskToBack(true)`，同时不能破坏已验证的
+`ChattingMainUI → LauncherUI → 第一次 Back 收起` 路径。下次复现后应立即保留
+`WeModern` main log，以确认 `onActivityResult` 的 resultCode、Bridge resume 状态和 AppTask 查找结果。
+
+返回验证后观察到全屏微信的系统手势导航条绘制在应用底部 tab 区域内。对照排除了 WeModern
+启动 flags：从 Pixel Launcher 的真实微信图标启动时，调用方为 Nexus Launcher 且使用标准
+`MAIN` / `LAUNCHER` / `0x10200000`，force-stop 后冷启动也显示相同。窗口状态显示微信 8.0.69
+自身 `targetSdk=35`，`LauncherUI` 被系统标记为 `EDGE_TO_EDGE_ENFORCED`，并主动请求
+`LAYOUT_HIDE_NAVIGATION`；WeModern 无法修改另一个应用窗口的 inset。该显示问题不引入额外
+权限或设备级 compat workaround，也不归因于本次 Bridge 返回优化。
+
+## IME 覆盖的 A/B 验证
+
+Pixel 9 Pro / API 37、微信 8.0.69 按以下顺序完成了三组真机对照：
+
+1. Bridge 临时从 `startIntentSenderForResult` 改回普通 `startIntentSender`。Bubble task 仍为
+   Bridge 根、`ChattingMainUI` 位于其上，唤出 IME 后输入栏继续被覆盖。因此 result 启动方式
+   不是根因。
+2. Bubble 直接以微信 `LauncherUI` 为根，再从微信 Home 内点击会话。聊天内容仍由同一个
+   `LauncherUI` Activity 承载，task 中没有独立 `ChattingMainUI`；唤出 IME 后输入栏会正确移到
+   键盘上方。
+3. Bridge 先把 `LauncherUI` 放进同一个 Bubble task，再调用该会话原始通知 token。最终同一
+   task 内依次为 Bridge、`LauncherUI`、`ChattingMainUI`，输入栏仍被 IME 覆盖。因此仅仅预热
+   微信 Home，甚至让 Home 与聊天共处同一 Bubble task，都不能修复通知 token 路径。
+
+第三组的系统窗口已按 IME 正确裁剪到屏幕 y=1735，但 `ChattingMainUI` 的客户端 DecorView
+仍按 1184×1800 布局，`ChatFooter` 的局部 y 范围为 1465..2286，落在裁剪后的可见区域之外。
+这说明 SystemUI/Bubble task 的 resize 已发生，未响应这次可见区域变化的是微信独立
+`ChattingMainUI` 内部布局。相比之下，微信 Home 内部导航没有创建该 Activity，仍由
+`LauncherUI` 的内容布局响应 IME，所以表现正常。
+
+结论是动态缩短 Bubble `desiredHeight` 只能改变外层裁剪范围，无法迫使另一个应用的
+`ChattingMainUI` 重排 `ChatFooter`，甚至可能进一步减少可见区域。无需额外权限的干净路径只能
+是继续使用精确通知 token 并接受该微信版本的 IME 限制，或者改走 `LauncherUI` 内部导航；
+后者没有可稳定调用的会话定位 API，不能可靠保留当前“一会话一 Bubble、分别精确直达”的
+行为。验证中曾临时解绑通知监听器，以避免微信撤销源通知时删除 Home-first 实验 Bubble；这只
+用于保持对照环境，不是产品方案。
+
 SystemUI 同时只展开一个 Bubble；“并存”指 Bubble 栈中保留多个入口。其他 Android 或
 微信版本仍可能复用现有全屏 task，因为 WeModern 无法修改 immutable PendingIntent 的
 内部 flags。目标缺失、类型无效或 token 已取消时，真实微信通知不会附加 trampoline

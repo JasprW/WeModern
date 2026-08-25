@@ -33,6 +33,16 @@ final class ConversationBubbleStore {
         notifyListeners(conversationId, null);
     }
 
+    static boolean clearMessages(String conversationId) {
+        if (conversationId == null) return false;
+        ConversationBubbleState current = STATES.get(conversationId);
+        if (current == null) return false;
+        ConversationBubbleState cleared = current.withoutMessages();
+        STATES.put(conversationId, cleared);
+        if (cleared != current) notifyListeners(conversationId, cleared);
+        return cleared != current;
+    }
+
     static void addListener(String conversationId, Listener listener) {
         if (conversationId == null || listener == null) return;
         LISTENERS.computeIfAbsent(conversationId, ignored -> new CopyOnWriteArrayList<>())

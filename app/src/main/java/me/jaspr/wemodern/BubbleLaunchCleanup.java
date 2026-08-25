@@ -13,6 +13,8 @@ final class BubbleLaunchCleanup {
     private static final String TAG = "WeModern";
     private static final String PREFERENCES = "bubble_launch_cleanup";
     private static final String KEY_SUPPRESS_APP_CANCEL_UNTIL = "suppress_app_cancel_until";
+    private static final String KEY_SUPPRESS_APP_CANCEL_CONVERSATION =
+            "suppress_app_cancel_conversation";
     private static final long APP_CANCEL_SUPPRESSION_MS = 5000L;
 
     private BubbleLaunchCleanup() {
@@ -53,12 +55,24 @@ final class BubbleLaunchCleanup {
         }
     }
 
-    static void suppressAppCancelForTrampolineLaunch(Context context) {
+    static void suppressAppCancelForTrampolineLaunch(
+            Context context,
+            String conversationId
+    ) {
         long suppressUntil = System.currentTimeMillis() + APP_CANCEL_SUPPRESSION_MS;
-        preferences(context).edit()
-                .putLong(KEY_SUPPRESS_APP_CANCEL_UNTIL, suppressUntil)
-                .apply();
+        SharedPreferences.Editor editor = preferences(context).edit()
+                .putLong(KEY_SUPPRESS_APP_CANCEL_UNTIL, suppressUntil);
+        if (isEmpty(conversationId)) {
+            editor.remove(KEY_SUPPRESS_APP_CANCEL_CONVERSATION);
+        } else {
+            editor.putString(KEY_SUPPRESS_APP_CANCEL_CONVERSATION, conversationId);
+        }
+        editor.apply();
         Log.d(TAG, "temporarily suppressing bubble cleanup for embedded WeChat launch");
+    }
+
+    static void suppressAppCancelForTrampolineLaunch(Context context) {
+        suppressAppCancelForTrampolineLaunch(context, null);
     }
 
     static void clearAfterWeChatAppCancel(Context context) {
@@ -79,11 +93,41 @@ final class BubbleLaunchCleanup {
     }
 
     static void clearAppCancelSuppression(Context context) {
-        preferences(context).edit().remove(KEY_SUPPRESS_APP_CANCEL_UNTIL).apply();
+        preferences(context).edit()
+                .remove(KEY_SUPPRESS_APP_CANCEL_UNTIL)
+                .remove(KEY_SUPPRESS_APP_CANCEL_CONVERSATION)
+                .apply();
     }
 
     static boolean shouldSuppressAppCancelCleanup(long now, long suppressUntil) {
         return suppressUntil > now;
+    }
+
+    static boolean shouldClearPreservedConversationHistory(
+            Context context,
+            String conversationId
+    ) {
+        SharedPreferences preferences = preferences(context);
+        return shouldClearPreservedConversationHistory(
+                System.currentTimeMillis(),
+                preferences.getLong(KEY_SUPPRESS_APP_CANCEL_UNTIL, 0L),
+                preferences.getString(KEY_SUPPRESS_APP_CANCEL_CONVERSATION, null),
+                conversationId,
+                WeChatForegroundState.isWeChatForeground()
+        );
+    }
+
+    static boolean shouldClearPreservedConversationHistory(
+            long now,
+            long suppressUntil,
+            String launchedConversationId,
+            String removedConversationId,
+            boolean fullScreenWeChatForeground
+    ) {
+        if (fullScreenWeChatForeground) return true;
+        if (!shouldSuppressAppCancelCleanup(now, suppressUntil)) return true;
+        return !isEmpty(launchedConversationId)
+                && launchedConversationId.equals(removedConversationId);
     }
 
     static boolean shouldKeepAfterWeChatAppCancel(
@@ -99,5 +143,9 @@ final class BubbleLaunchCleanup {
 
     static boolean shouldCancel(boolean hasBubbleMetadata) {
         return hasBubbleMetadata;
+    }
+
+    private static boolean isEmpty(String value) {
+        return value == null || value.isEmpty();
     }
 }

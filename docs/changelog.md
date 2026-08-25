@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- 修复从 WeModern 普通消息通知进入微信后，下一条新通知仍包含已读历史：旧 proxy 虽然携带 `message:<conversationId>`，却没有标记会话已打开；通知 `AUTO_CANCEL` 反而会先删除 replacement 映射，使后续微信 APP_CANCEL 无法恢复会话并清理历史。现在 proxy 只在微信 PendingIntent 成功发送后解析精确 conversationId，通过与 Bubble 共用的会话级入口立即清空 `MessagingStyle` 历史和 Bubble 快照，不再依赖 removal 回调顺序。同时保留对真正 sync removal 的兜底：活动 host 与已读历史分离，Bubble 启动的 5 秒窗口携带 conversationId，不误清微信同批 APP_CANCEL 的其他未读会话。
+- 修复微信全屏前台时收到消息仍弹出 Bubble：消息发布现在复用 activity log watcher 维护的顶层任务状态；只要确认当前是非 Bubble task 内的微信 Activity，常规和 trampoline 模式都不附加 `BubbleMetadata`，仍保留普通通知改写。离开微信后的新通知恢复原有 Bubble 策略。
+- 修复通过 trampoline Bubble 打开会话后，后续新消息仍重复包含已读历史：为了让 Bubble host 在微信批量 `APP_CANCEL` 后继续存在，旧保留分支不能再用源通知移除作为该会话的已读信号，结果内存 `MessagingStyle` 历史和 Bubble 快照一直累积。现在 Bridge 在精确会话 token 提交成功时，按 conversationId 只清空被打开会话的消息历史，保留其 host、shortcut、最新 token 与 task；其他并存 Bubble 不受影响。
+- 修复部分微信状态下对话页第一次 Back 先显示微信 Home、第二次 Back 才收起 Bubble：微信会主动启动 `LauncherUI` 再结束 `ChattingMainUI`，旧 Bridge 只能等自己恢复到前台，因此看不到第一次 Back。现在 Bridge 以 result 方式启动会话；会话结束结果到达后，在同一个 AppTask 中以 `CLEAR_TOP | SINGLE_TOP` 恢复 Bridge、清掉其上的微信 Home，再将 task 移到后台。Pixel 9 Pro / API 37 已确认第一次 Back 直接收起 Bubble，不再短暂停留微信 Home；原有“微信直接返回 Bridge”路径继续作为兜底。
 - 修复单个或多个新 Bubble 打开后立即退出：Pixel 日志确认 Bridge 与微信会话均已正常启动，源通知 app-cancel 也正确进入保留分支；但该分支删除 replacement 映射后，SystemUI 紧接着回送带 `FLAG_BUBBLE` 的 host 更新，孤儿清理把它误判为无映射残留并主动取消，最终让 SystemUI 移除 Bubble task。现在仍有内存会话状态、稳定通知 ID、匹配 shortcut、BubbleMetadata 与 `FLAG_BUBBLE` 的 trampoline host 即使源映射已消费也继续保留；进程重建后没有会话状态的真正 orphan 仍会清理。
 - 将已通过 Pixel 9 Pro / API 37 双会话验收的精确多会话桥接设为 Bubble trampoline 的唯一预设行为：每个合资格微信会话使用自己的稳定替换通知、conversation shortcut 和 Bridge PendingIntent 作为 Bubble host；同一会话更新原 Bubble，不同会话可并存并分别直达。删除“精确打开会话”和“多会话气泡”两个实验开关，以及旧固定最新会话 host、微信 Home 路径、双 host ID 轮换、专用 shortcut、设置卡和实现代码；升级时同步取消历史 host 通知、移除 shortcut、清空偏好并删除 `wechat_bubble_host_visual_alerts` channel。
 - 修复打开后一个 Bubble 会关闭前一个：Pixel 日志确认微信进入聊天时会连续 APP_CANCEL 多个源通知，旧保护只覆盖当前 Bridge 会话，导致其他 Bubble host 跟随源通知删除。现在嵌入启动期间保留所有仍带 BubbleMetadata、匹配会话 shortcut 且被系统标记为 Bubble 的活动 host；未真正成为 Bubble 的普通通知、显式拖走和全屏微信清理逻辑不变。真机已确认双会话可并存、分别直达，直接 Back 收起当前 Bubble，通知更新后重新展开进入对应的新聊天目标。

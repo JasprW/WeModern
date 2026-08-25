@@ -2,6 +2,7 @@ package me.jaspr.wemodern;
 
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.ActivityOptions;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -20,16 +21,24 @@ public final class TrampolineBridgeActivity extends Activity {
             "me.jaspr.wemodern.extra.TRAMPOLINE_BRIDGE_TARGET";
     private static final String EXTRA_CONVERSATION_ID =
             "me.jaspr.wemodern.extra.TRAMPOLINE_BRIDGE_CONVERSATION_ID";
+    private static final String ACTION_COLLAPSE_AFTER_TARGET_RESULT =
+            "me.jaspr.wemodern.action.COLLAPSE_TRAMPOLINE_AFTER_TARGET_RESULT";
     private static final int REQUEST_CODE_NAMESPACE = 0x45000000;
+    private static final int TARGET_RESULT_REQUEST_CODE = 0x5743;
 
     private boolean targetLaunchSubmitted;
     private boolean pausedAfterTargetLaunch;
     private boolean movingTaskToBack;
     private boolean relaunchOnNextResume;
+    private boolean collapseOnNextResume;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (isCollapseIntent(getIntent())) {
+            collapseOnNextResume = true;
+            return;
+        }
         forward(getIntent());
     }
 
@@ -37,6 +46,10 @@ public final class TrampolineBridgeActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (isCollapseIntent(intent)) {
+            collapseOnNextResume = true;
+            return;
+        }
         resetLaunchState();
         forward(intent);
     }
@@ -45,6 +58,11 @@ public final class TrampolineBridgeActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (!AppIconLaunchPolicy.isLaunchedFromBubble(this)) return;
+        if (collapseOnNextResume) {
+            collapseOnNextResume = false;
+            collapseBubble("WeChat conversation result");
+            return;
+        }
         if (relaunchOnNextResume) {
             relaunchOnNextResume = false;
             forward(getIntent());
@@ -54,18 +72,7 @@ public final class TrampolineBridgeActivity extends Activity {
             return;
         }
 
-        targetLaunchSubmitted = false;
-        pausedAfterTargetLaunch = false;
-        movingTaskToBack = true;
-        relaunchOnNextResume = true;
-        boolean moved = moveTaskToBack(true);
-        Log.i(TAG, "collapsing trampoline bubble after conversation Back"
-                + ", taskId=" + getTaskId()
-                + ", moved=" + moved);
-        if (!moved) {
-            movingTaskToBack = false;
-            relaunchOnNextResume = false;
-        }
+        collapseBubble("Bridge resumed after conversation Back");
     }
 
     @Override
@@ -76,6 +83,27 @@ public final class TrampolineBridgeActivity extends Activity {
             return;
         }
         if (targetLaunchSubmitted) pausedAfterTargetLaunch = true;
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        boolean launchedFromBubble = AppIconLaunchPolicy.isLaunchedFromBubble(this);
+        if (!shouldCollapseAfterTargetResult(
+                requestCode,
+                launchedFromBubble,
+                targetLaunchSubmitted
+        )) {
+            return;
+        }
+
+        Log.i(TAG, "WeChat conversation returned to trampoline bridge"
+                + ", taskId=" + getTaskId()
+                + ", resultCode=" + resultCode
+                + ", bridgeResumed=" + !pausedAfterTargetLaunch);
+        targetLaunchSubmitted = false;
+        pausedAfterTargetLaunch = false;
+        requestCollapseAtBridgeRoot();
     }
 
     static PendingIntent createBubbleIntent(
@@ -124,6 +152,20 @@ public final class TrampolineBridgeActivity extends Activity {
         return targetLaunchSubmitted && pausedAfterTargetLaunch;
     }
 
+    static boolean shouldCollapseAfterTargetResult(
+            int requestCode,
+            boolean launchedFromBubble,
+            boolean targetLaunchSubmitted
+    ) {
+        return requestCode == TARGET_RESULT_REQUEST_CODE
+                && launchedFromBubble
+                && targetLaunchSubmitted;
+    }
+
+    static int targetResultRequestCode() {
+        return TARGET_RESULT_REQUEST_CODE;
+    }
+
     private void forward(Intent intent) {
         PendingIntent target = targetFrom(intent);
         boolean launchedFromBubble = AppIconLaunchPolicy.isLaunchedFromBubble(this);
@@ -148,7 +190,7 @@ public final class TrampolineBridgeActivity extends Activity {
                 taskId,
                 conversationId
         );
-        BubbleLaunchCleanup.suppressAppCancelForTrampolineLaunch(this);
+        BubbleLaunchCleanup.suppressAppCancelForTrampolineLaunch(this, conversationId);
         Log.i(TAG, "forwarding WeChat conversation from trampoline bubble"
                 + ", taskId=" + taskId
                 + ", conversation=" + conversationId
@@ -160,14 +202,18 @@ public final class TrampolineBridgeActivity extends Activity {
         targetLaunchSubmitted = true;
         pausedAfterTargetLaunch = false;
         try {
-            startIntentSender(
+            startIntentSenderForResult(
                     target.getIntentSender(),
+                    TARGET_RESULT_REQUEST_CODE,
                     null,
                     AppIconLaunchPolicy.taskSeparatingFlags(),
                     0,
                     0,
                     pendingIntentLaunchOptions()
             );
+            // Keep the rewritten notification as the Bubble host, but start the next incoming
+            // notification from a fresh unread history for this conversation only.
+            WeChatNotificationService.markConversationOpenedFromBubble(conversationId);
         } catch (IntentSender.SendIntentException | RuntimeException e) {
             Log.w(TAG, "failed to forward WeChat conversation inside trampoline bubble", e);
             resetLaunchState();
@@ -182,6 +228,56 @@ public final class TrampolineBridgeActivity extends Activity {
         pausedAfterTargetLaunch = false;
         movingTaskToBack = false;
         relaunchOnNextResume = false;
+        collapseOnNextResume = false;
+    }
+
+    private void requestCollapseAtBridgeRoot() {
+        collapseOnNextResume = true;
+        Intent collapseIntent = new Intent(this, TrampolineBridgeActivity.class)
+                .setAction(ACTION_COLLAPSE_AFTER_TARGET_RESULT)
+                .setData(getIntent().getData())
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent target = targetFrom(getIntent());
+        if (target != null) collapseIntent.putExtra(EXTRA_TARGET, target);
+        String conversationId = getIntent().getStringExtra(EXTRA_CONVERSATION_ID);
+        if (conversationId != null) {
+            collapseIntent.putExtra(EXTRA_CONVERSATION_ID, conversationId);
+        }
+
+        ActivityManager manager = getSystemService(ActivityManager.class);
+        if (manager != null) {
+            for (ActivityManager.AppTask appTask : manager.getAppTasks()) {
+                try {
+                    if (appTask.getTaskInfo().taskId != getTaskId()) continue;
+                    appTask.startActivity(this, collapseIntent, null);
+                    Log.i(TAG, "requested trampoline bridge clear-top after conversation result"
+                            + ", taskId=" + getTaskId());
+                    return;
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "failed to clear trampoline task above bridge", e);
+                    break;
+                }
+            }
+        }
+
+        collapseOnNextResume = false;
+        collapseBubble("conversation result fallback");
+    }
+
+    private void collapseBubble(String reason) {
+        targetLaunchSubmitted = false;
+        pausedAfterTargetLaunch = false;
+        movingTaskToBack = true;
+        relaunchOnNextResume = true;
+        boolean moved = moveTaskToBack(true);
+        Log.i(TAG, "collapsing trampoline bubble"
+                + ", taskId=" + getTaskId()
+                + ", reason=" + reason
+                + ", moved=" + moved);
+        if (!moved) {
+            movingTaskToBack = false;
+            relaunchOnNextResume = false;
+        }
     }
 
     private void fallback(boolean launchedFromBubble) {
@@ -225,6 +321,11 @@ public final class TrampolineBridgeActivity extends Activity {
         @SuppressWarnings("deprecation")
         PendingIntent target = intent.getParcelableExtra(EXTRA_TARGET);
         return target;
+    }
+
+    private static boolean isCollapseIntent(Intent intent) {
+        return intent != null
+                && ACTION_COLLAPSE_AFTER_TARGET_RESULT.equals(intent.getAction());
     }
 
     private static int conversationHash(String conversationId) {

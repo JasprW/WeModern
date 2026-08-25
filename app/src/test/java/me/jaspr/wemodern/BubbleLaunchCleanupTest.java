@@ -26,4 +26,22 @@ public class BubbleLaunchCleanupTest {
         assertFalse(BubbleLaunchCleanup.shouldKeepAfterWeChatAppCancel(true, true));
         assertFalse(BubbleLaunchCleanup.shouldKeepAfterWeChatAppCancel(false, false));
     }
+
+    @Test
+    public void embeddedLaunchClearsOnlyItsExactConversationHistory() {
+        assertTrue(BubbleLaunchCleanup.shouldClearPreservedConversationHistory(
+                1000L, 1001L, "wechat_alice", "wechat_alice", false));
+        assertFalse(BubbleLaunchCleanup.shouldClearPreservedConversationHistory(
+                1000L, 1001L, "wechat_alice", "wechat_bob", false));
+        assertFalse(BubbleLaunchCleanup.shouldClearPreservedConversationHistory(
+                1000L, 1001L, null, "wechat_alice", false));
+    }
+
+    @Test
+    public void normalSyncRemovalClearsHistoryEvenWhenBubbleHostSurvives() {
+        assertTrue(BubbleLaunchCleanup.shouldClearPreservedConversationHistory(
+                1000L, 1000L, "wechat_alice", "wechat_bob", false));
+        assertTrue(BubbleLaunchCleanup.shouldClearPreservedConversationHistory(
+                1000L, 2000L, "wechat_alice", "wechat_bob", true));
+    }
 }

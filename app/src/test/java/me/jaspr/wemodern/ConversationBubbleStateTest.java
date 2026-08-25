@@ -1,7 +1,10 @@
 package me.jaspr.wemodern;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.After;
 import org.junit.Test;
@@ -56,6 +59,26 @@ public class ConversationBubbleStateTest {
         assertNotSame(ConversationBubbleStore.get("alice"), ConversationBubbleStore.get("bob"));
         assertEquals("A", ConversationBubbleStore.get("alice").messages.get(0).text);
         assertEquals("B", ConversationBubbleStore.get("bob").messages.get(0).text);
+    }
+
+    @Test
+    public void openingConversationClearsOnlyItsMessagesAndKeepsHostState() {
+        ConversationBubbleState alice = ConversationBubbleState.create("alice", "Alice", null)
+                .append("Alice", "A", 1L, null);
+        ConversationBubbleState bob = ConversationBubbleState.create("bob", "Bob", null)
+                .append("Bob", "B", 2L, null);
+        ConversationBubbleStore.update(alice);
+        ConversationBubbleStore.update(bob);
+
+        assertTrue(ConversationBubbleStore.clearMessages("alice"));
+
+        ConversationBubbleState clearedAlice = ConversationBubbleStore.get("alice");
+        assertNotNull(clearedAlice);
+        assertEquals("alice", clearedAlice.conversationId);
+        assertEquals("Alice", clearedAlice.title);
+        assertTrue(clearedAlice.messages.isEmpty());
+        assertEquals("B", ConversationBubbleStore.get("bob").messages.get(0).text);
+        assertFalse(ConversationBubbleStore.clearMessages("alice"));
     }
 
     @Test

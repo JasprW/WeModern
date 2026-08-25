@@ -17,6 +17,7 @@ public final class WeChatLaunchProxyActivity extends Activity {
             "me.jaspr.wemodern.extra.WECHAT_CONTENT_INTENT";
     private static final String EXTRA_LAUNCH_KEY =
             "me.jaspr.wemodern.extra.WECHAT_LAUNCH_KEY";
+    private static final String MESSAGE_LAUNCH_PREFIX = "message:";
     private static final int REQUEST_CODE_NAMESPACE = 0x45000000;
 
     @Override
@@ -29,13 +30,23 @@ public final class WeChatLaunchProxyActivity extends Activity {
             return;
         }
 
-        if (isIncomingCallLaunchKey(getIntent().getStringExtra(EXTRA_LAUNCH_KEY))) {
+        String launchKey = getIntent().getStringExtra(EXTRA_LAUNCH_KEY);
+        if (isIncomingCallLaunchKey(launchKey)) {
             WeChatNotificationService.prepareForIncomingCallLaunch();
             WeChatNotificationService.cancelCallNotification(this);
         }
 
         BubbleLaunchCleanup.clear(this);
-        if (!PendingIntentLauncher.send(target)) {
+        boolean targetSent = PendingIntentLauncher.send(target);
+        if (targetSent) {
+            String conversationId = messageConversationId(launchKey);
+            if (conversationId != null) {
+                WeChatNotificationService.markConversationOpened(
+                        conversationId,
+                        "notification click"
+                );
+            }
+        } else {
             WeChatLauncher.open(this);
         }
         finish();
@@ -62,6 +73,12 @@ public final class WeChatLaunchProxyActivity extends Activity {
 
     static boolean isIncomingCallLaunchKey(String launchKey) {
         return launchKey != null && launchKey.startsWith("call:incoming:");
+    }
+
+    static String messageConversationId(String launchKey) {
+        if (launchKey == null || !launchKey.startsWith(MESSAGE_LAUNCH_PREFIX)) return null;
+        String conversationId = launchKey.substring(MESSAGE_LAUNCH_PREFIX.length());
+        return conversationId.isEmpty() ? null : conversationId;
     }
 
     static int pendingIntentFlags() {
