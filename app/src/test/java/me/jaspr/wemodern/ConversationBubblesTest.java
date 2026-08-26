@@ -71,19 +71,19 @@ public class ConversationBubblesTest {
     @Test
     public void trampolineNeedsExactConversationData() {
         assertTrue(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, false, true, true, true));
+                37, true, true, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                30, true, true, false, true, true, true));
+                30, true, true, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, false, true, false, true, true, true));
+                37, false, true, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, false, false, true, true, true));
+                37, true, false, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, false, false, true, true));
+                37, true, true, true, false, false, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, false, true, false, true));
+                37, true, true, true, false, true, false, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, false, true, true, false));
+                37, true, true, true, false, true, true, false));
     }
 
     @Test
@@ -91,7 +91,19 @@ public class ConversationBubblesTest {
         assertFalse(ConversationBubbles.shouldApply(
                 37, true, false, true, true, true));
         assertFalse(ConversationBubbles.shouldApplyTrampoline(
-                37, true, true, true, true, true, true));
+                37, true, true, true, true, true, true, true));
+    }
+
+    @Test
+    public void sharedTrampolineDoesNotAttachPerConversationMetadata() {
+        assertFalse(ConversationBubbles.shouldApplyTrampoline(
+                37, true, true, false, false, true, true, true));
+        assertTrue(ConversationBubbles.shouldUseSharedTrampoline(
+                37, true, true, false, true, false));
+        assertFalse(ConversationBubbles.shouldUseSharedTrampoline(
+                37, true, true, true, true, false));
+        assertFalse(ConversationBubbles.shouldUseSharedTrampoline(
+                37, true, true, false, true, true));
     }
 
     @Test

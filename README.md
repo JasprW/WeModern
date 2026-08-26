@@ -8,10 +8,10 @@ notifications with the notification features available on modern Android.
 - Rebuilds WeChat messages with Android's conversation-style notification UI,
   including sender avatars, message history, conversation grouping, and direct
   links back to each chat.
-- Adds one native Android chat bubble per WeChat conversation on Android 10 and
-  later. Each resizable bubble keeps recent messages visible. On Android 12 and
-  later, Bubble trampoline can instead bridge each Bubble directly to that
-  conversation's latest WeChat notification action.
+- Adds native Android chat bubbles on Android 10 and later. Each resizable
+  bubble keeps recent messages visible. On Android 12 and later, Bubble
+  trampoline can either bridge one Bubble per conversation to its latest
+  WeChat notification action, or keep one shared Bubble that opens WeChat Home.
 - Rebuilds incoming WeChat voice and video calls as native `CallStyle`
   notifications that keep ringing and vibrating until handled, then switches
   the same notification to a silent, promoted ongoing `CallStyle` with elapsed
@@ -38,13 +38,16 @@ control the call.
 Android 17 treats bubbles as a windowing mode. WeModern's normal conversation
 bubble activity is embedded, resizable, supports multiple document instances,
 and restores its message snapshot after process recreation. On Android 12 and
-later, Bubble trampoline gives each eligible rewritten conversation notification
-its own mutable WeModern bridge task. The bridge validates and forwards that
-conversation's latest immutable WeChat Activity `PendingIntent`; later messages
-in the same conversation update its Bubble, while different conversations keep
-separate Bubble entries. Returning from the chat collapses the Bubble instead
-of deleting it. Other Android or WeChat versions can still reuse a full-screen
-task because WeModern cannot rewrite the immutable target's private flags.
+later, Bubble trampoline offers two modes. The default conversation mode gives
+each eligible notification its own mutable WeModern bridge task. The bridge
+validates and forwards that conversation's latest immutable WeChat Activity
+`PendingIntent`; later messages in the same conversation update its Bubble,
+while different conversations keep separate Bubble entries. Returning from the
+chat collapses the Bubble instead of deleting it. The shared mode keeps one
+stable Bubble and launches only WeChat Home; the user then selects a chat inside
+WeChat. This avoids the direct-chat task shape that can let the IME cover the
+input bar. Other Android or WeChat versions can still reuse a full-screen task
+because WeModern cannot rewrite the immutable target's private flags.
 
 All rewritten messages use the high-importance `wechat_messages_alerts`
 channel. Pixel 9 Pro / API 37 validation confirmed that when Android accepts a
@@ -141,14 +144,20 @@ Conversation overrides are keyed by the source name in WeChat's notification.
 Changing a nickname or remark, renaming a group, or changing the WeChat language
 can therefore make an existing override stop matching.
 
-On Android 12 or later, enabling **Bubble trampoline** makes each eligible
-conversation notification its own exact Bridge Bubble. The same private/group
-defaults and conversation overrides decide which conversations may create or
-update a Bubble. A disabled conversation keeps its normal heads-up notification
-but cannot create or update a Bubble. The Message test always remains
-notification ID `100` and uses the local test Bubble because it does not carry a
-WeChat-created conversation action. With Android set to Selected conversations,
-each real conversation may need to be allowed separately.
+On Android 12 or later, enabling **Bubble trampoline** reveals a mode switch.
+The default conversation mode makes each eligible conversation notification its
+own Bridge Bubble and forwards the latest WeChat-created conversation action.
+It opens the chat directly, but WeChat's input bar may be covered by the IME in
+the embedded task. Turning the mode switch off keeps one shared Bubble for all
+eligible conversations. That Bubble opens WeChat Home rather than a specific
+chat, which requires one more tap but gives WeChat the task shape that better
+adapts to the IME. The same private/group defaults and conversation overrides
+decide which notifications may create or update either kind of Bubble. A
+disabled conversation keeps its normal heads-up notification but cannot create,
+update, or take over a Bubble. The Message test always remains notification ID
+`100`; in shared mode it also updates the stable Home Bubble. With Android set
+to Selected conversations, conversation mode may require each real conversation
+to be allowed separately, while shared mode uses one stable shortcut.
 
 To enable synchronous removal of rewritten WeChat notifications when WeChat
 cancels its original notification, also grant log access and enable debug

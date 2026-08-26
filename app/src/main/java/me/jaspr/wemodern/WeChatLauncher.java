@@ -51,6 +51,12 @@ final class WeChatLauncher {
         return opened;
     }
 
+    static boolean isBubbleRootActivity(String componentName, String action) {
+        if (action != null || componentName == null) return false;
+        return componentName.equals(WECHAT_PACKAGE + "/.ui.LauncherUI")
+                || componentName.equals(WECHAT_PACKAGE + "/com.tencent.mm.ui.LauncherUI");
+    }
+
     private static boolean open(
             Context context,
             boolean keepInCurrentTask,

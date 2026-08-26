@@ -14,8 +14,16 @@ public class NotificationCleanupPolicyTest {
                 true,
                 false,
                 false,
+                false,
                 false));
         assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
+                false,
+                true,
+                false,
+                false,
+                false));
+        assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
+                false,
                 false,
                 true,
                 false,
@@ -23,14 +31,17 @@ public class NotificationCleanupPolicyTest {
         assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
                 false,
                 false,
+                false,
                 true,
                 false));
         assertTrue(WeChatNotificationService.shouldKeepSelfNotification(
+                false,
                 false,
                 false,
                 false,
                 true));
         assertFalse(WeChatNotificationService.shouldKeepSelfNotification(
+                false,
                 false,
                 false,
                 false,

@@ -159,7 +159,7 @@ class MainActivity : ComponentActivity() {
         )
         NotificationDebugPreferences.registerListener(this, preferencesListener)
         enableEdgeToEdge()
-        BubbleTrampolineBehavior.removeLegacySingleHost(this)
+        BubbleTrampolineBehavior.migrateLegacyPreferences(this)
         NotificationChannels.ensure(this)
         ConversationBubbles.syncActiveNotifications(this)
         NotificationChannels.deleteLegacyMessageChannels(this)
@@ -207,6 +207,11 @@ class MainActivity : ComponentActivity() {
                             this,
                             enabled && setupState.bubbleTrampolineCanBeSet,
                         )
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                    },
+                    onSetPerConversationTrampolineEnabled = { enabled ->
+                        BubbleTrampolineBehavior.setPerConversationMode(this, enabled)
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
                     },
@@ -308,6 +313,8 @@ class MainActivity : ComponentActivity() {
             postNotificationsGranted = postNotificationsGranted,
             appIconOpensWeChat = AppIconBehavior.isOpenWeChatEnabled(this),
             bubbleTrampolineEnabled = BubbleTrampolineBehavior.isEnabled(this),
+            perConversationTrampolineEnabled =
+                BubbleTrampolineBehavior.isPerConversationMode(this),
             chatBubblesEnabled = chatBubblesEnabled,
             chatBubblesSystemAllowed = chatBubblesSystemAllowed,
             defaultPrivateBubblesEnabled =
@@ -545,8 +552,36 @@ class MainActivity : ComponentActivity() {
             senderAvatar,
             MessageTestNotifications.CURRENT_ID,
         )
+        val sharedHostRequested = ConversationBubbles.isSharedTrampolineMode(
+            this,
+            MessageTestNotifications.SHORTCUT_ID,
+        )
+        if (sharedHostRequested) {
+            builder
+                .setGroup(WeChatNotificationService.MESSAGE_GROUP_KEY)
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_SUMMARY)
+                .setDefaults(0)
+                .setSound(null)
+                .setVibrate(null)
+        }
         val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.notify(MessageTestNotifications.CURRENT_ID, builder.build())
+        val notification = builder.build()
+        notificationManager.notify(MessageTestNotifications.CURRENT_ID, notification)
+        if (sharedHostRequested && !TrampolineBubbleHost.update(
+                this,
+                notification,
+                MessageTestNotifications.SHORTCUT_ID,
+                getString(R.string.test_message_sender),
+                senderAvatar,
+            )
+        ) {
+            builder
+                .setGroup(null)
+                .setGroupAlertBehavior(Notification.GROUP_ALERT_ALL)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setOnlyAlertOnce(false)
+            notificationManager.notify(MessageTestNotifications.CURRENT_ID, builder.build())
+        }
         MessageTestNotifications.retainAsCachedConversationShortcut(this)
     }
 
@@ -566,6 +601,7 @@ private data class SetupState(
     val postNotificationsGranted: Boolean = false,
     val appIconOpensWeChat: Boolean = false,
     val bubbleTrampolineEnabled: Boolean = false,
+    val perConversationTrampolineEnabled: Boolean = true,
     val chatBubblesEnabled: Boolean = false,
     val chatBubblesSystemAllowed: Boolean = false,
     val defaultPrivateBubblesEnabled: Boolean = true,
@@ -665,6 +701,7 @@ private fun WeModernApp(
     onSetAppIconOpensWeChat: (Boolean) -> Unit,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
+    onSetPerConversationTrampolineEnabled: (Boolean) -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
     onSetConversationSortOrder: (ConversationBubblePreferences.SortOrder) -> Unit,
@@ -768,6 +805,8 @@ private fun WeModernApp(
                         state = state,
                         onSetChatBubblesEnabled = onSetChatBubblesEnabled,
                         onSetBubbleTrampolineEnabled = onSetBubbleTrampolineEnabled,
+                        onSetPerConversationTrampolineEnabled =
+                            onSetPerConversationTrampolineEnabled,
                         onSetDefaultPrivateBubblesEnabled =
                             onSetDefaultPrivateBubblesEnabled,
                         onSetDefaultGroupBubblesEnabled = onSetDefaultGroupBubblesEnabled,
@@ -1491,6 +1530,7 @@ private fun LazyListScope.bubbleSectionItems(
     state: SetupState,
     onSetChatBubblesEnabled: (Boolean) -> Unit,
     onSetBubbleTrampolineEnabled: (Boolean) -> Unit,
+    onSetPerConversationTrampolineEnabled: (Boolean) -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
     onOpenConversationSettings: () -> Unit,
@@ -1548,6 +1588,25 @@ private fun LazyListScope.bubbleSectionItems(
                 checked = state.bubbleTrampolineEnabled,
                 enabled = state.bubbleTrampolineCanBeSet,
                 onCheckedChange = onSetBubbleTrampolineEnabled,
+            )
+        }
+    }
+    if (state.bubbleTrampolineAvailable) {
+        animatedSettingsPageItem(
+            key = "bubble_trampoline_per_conversation",
+            contentType = "switch_card",
+            visible = state.chatBubblesReady && state.bubbleTrampolineEnabled,
+            spacingAfter = 8.dp,
+        ) {
+            SettingsSwitchCard(
+                title = stringResource(R.string.bubble_trampoline_per_conversation_title),
+                supporting = stringResource(
+                    R.string.bubble_trampoline_per_conversation_description
+                ),
+                icon = Icons.Rounded.TouchApp,
+                checked = state.perConversationTrampolineEnabled,
+                enabled = state.bubbleTrampolineCanBeSet,
+                onCheckedChange = onSetPerConversationTrampolineEnabled,
             )
         }
     }

@@ -36,7 +36,9 @@
     <string name="bubble_open_wechat_home">Open WeChat in bubble</string>
     <string name="bubble_no_messages">No recent messages</string>
     <string name="bubble_trampoline_title">Bubble trampoline</string>
-    <string name="bubble_trampoline_description">Open each eligible WeChat conversation inside its own bubble</string>
+    <string name="bubble_trampoline_description">Open WeChat inside Android bubbles</string>
+    <string name="bubble_trampoline_per_conversation_title">One bubble per conversation</string>
+    <string name="bubble_trampoline_per_conversation_description">On: each conversation gets a bubble that opens its chat directly, but the keyboard may cover the input area. Off: one shared bubble opens WeChat Home without entering a chat and adapts better to the IME.</string>
     <string name="bubble_trampoline_locked_description">Finish required notification setup to enable</string>
     <string name="bubble_trampoline_bubbles_required_description">Turn on Chat bubbles to configure</string>
     <string name="bubble_trampoline_system_required_description">Allow bubbles in Android settings first</string>

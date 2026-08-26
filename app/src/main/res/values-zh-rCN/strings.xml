@@ -36,7 +36,9 @@
     <string name="bubble_open_wechat_home">在气泡内打开微信</string>
     <string name="bubble_no_messages">暂无最近消息</string>
     <string name="bubble_trampoline_title">气泡跳板</string>
-    <string name="bubble_trampoline_description">在各自独立的气泡内打开每个符合条件的微信会话</string>
+    <string name="bubble_trampoline_description">在 Android 气泡内打开微信</string>
+    <string name="bubble_trampoline_per_conversation_title">每个会话独立气泡</string>
+    <string name="bubble_trampoline_per_conversation_description">开启：每个会话使用独立气泡并直接进入对应聊天，但输入法可能遮挡输入区域。关闭：所有会话共用一个气泡，只打开微信首页而不直接进入会话，对 IME 的适配更好。</string>
     <string name="bubble_trampoline_locked_description">完成必要的通知设置后可开启</string>
     <string name="bubble_trampoline_bubbles_required_description">开启聊天气泡后可设置</string>
     <string name="bubble_trampoline_system_required_description">请先在 Android 设置中允许气泡</string>

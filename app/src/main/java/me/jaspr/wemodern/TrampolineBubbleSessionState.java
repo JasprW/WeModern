@@ -20,7 +20,12 @@ final class TrampolineBubbleSessionState {
             String conversationId
     ) {
         if (taskId < 0) return;
-        EMBEDDED_SESSIONS.put(taskId, new Session(conversationId));
+        EMBEDDED_SESSIONS.put(taskId, new Session(conversationId, false));
+    }
+
+    static synchronized void onSharedHostLaunchStarted(int taskId) {
+        if (taskId < 0) return;
+        EMBEDDED_SESSIONS.put(taskId, new Session(null, true));
     }
 
     static synchronized boolean isEmbeddedSessionActive() {
@@ -37,6 +42,11 @@ final class TrampolineBubbleSessionState {
             if (conversationId.equals(session.conversationId)) return true;
         }
         return false;
+    }
+
+    static synchronized boolean isSharedHostTask(int taskId) {
+        Session session = EMBEDDED_SESSIONS.get(taskId);
+        return session != null && session.sharedHost;
     }
 
     static synchronized boolean onTaskRemoved(int taskId) {
@@ -65,9 +75,11 @@ final class TrampolineBubbleSessionState {
 
     private static final class Session {
         final String conversationId;
+        final boolean sharedHost;
 
-        Session(String conversationId) {
+        Session(String conversationId, boolean sharedHost) {
             this.conversationId = conversationId;
+            this.sharedHost = sharedHost;
         }
     }
 }

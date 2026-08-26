@@ -66,6 +66,8 @@ final class ConversationBubbles {
                         state == null ? null : state.conversationId
                 );
         boolean trampolineEnabled = BubbleTrampolineBehavior.isEnabled(context);
+        boolean perConversationMode =
+                BubbleTrampolineBehavior.isPerConversationMode(context);
         boolean weChatForeground = WeChatForegroundState.isWeChatForeground();
         if (enabled && weChatForeground && state != null) {
             Log.i(TAG, "suppress bubble while full-screen WeChat is foreground"
@@ -75,6 +77,7 @@ final class ConversationBubbles {
                 Build.VERSION.SDK_INT,
                 enabled,
                 trampolineEnabled,
+                perConversationMode,
                 weChatForeground,
                 state != null,
                 icon != null,
@@ -133,6 +136,7 @@ final class ConversationBubbles {
             int sdkInt,
             boolean enabled,
             boolean trampolineEnabled,
+            boolean perConversationMode,
             boolean weChatForeground,
             boolean hasState,
             boolean hasIcon,
@@ -141,10 +145,41 @@ final class ConversationBubbles {
         return BubbleTrampolineBehavior.isSupported(sdkInt)
                 && enabled
                 && trampolineEnabled
+                && perConversationMode
                 && !weChatForeground
                 && hasState
                 && hasIcon
                 && hasConversationIntent;
+    }
+
+    static boolean isSharedTrampolineMode(Context context, String conversationId) {
+        return shouldUseSharedTrampoline(
+                Build.VERSION.SDK_INT,
+                ChatBubbleBehavior.isReady(
+                        ChatBubbleBehavior.isEnabled(context),
+                        ChatBubbleBehavior.isSystemAllowed(context)
+                ),
+                BubbleTrampolineBehavior.isEnabled(context),
+                BubbleTrampolineBehavior.isPerConversationMode(context),
+                ConversationBubblePreferences.isEnabled(context, conversationId),
+                WeChatForegroundState.isWeChatForeground()
+        );
+    }
+
+    static boolean shouldUseSharedTrampoline(
+            int sdkInt,
+            boolean chatBubblesReady,
+            boolean trampolineEnabled,
+            boolean perConversationMode,
+            boolean conversationEnabled,
+            boolean weChatForeground
+    ) {
+        return BubbleTrampolineBehavior.isSupported(sdkInt)
+                && chatBubblesReady
+                && trampolineEnabled
+                && !perConversationMode
+                && conversationEnabled
+                && !weChatForeground;
     }
 
     @TargetApi(29)
@@ -159,6 +194,13 @@ final class ConversationBubbles {
         );
         boolean trampolineEnabled =
                 bubbleReady && BubbleTrampolineBehavior.isEnabled(context);
+        boolean perConversationMode =
+                BubbleTrampolineBehavior.isPerConversationMode(context);
+        boolean sharedTrampolineMode =
+                trampolineEnabled && !perConversationMode;
+        if (!sharedTrampolineMode) {
+            TrampolineBubbleHost.clear(context);
+        }
         boolean bubbleAllowedInCurrentForeground =
                 !WeChatForegroundState.isWeChatForeground();
         StatusBarNotification[] active = manager.getActiveNotifications();
@@ -167,6 +209,7 @@ final class ConversationBubbles {
         for (StatusBarNotification sbn : active) {
             Notification notification = sbn.getNotification();
             if (!NotificationChannels.isMessageChannel(notification.getChannelId())) continue;
+            if (TrampolineBubbleHost.isHostNotificationId(sbn.getId())) continue;
             boolean groupSummary =
                     (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
             if (groupSummary) {
@@ -206,7 +249,8 @@ final class ConversationBubbles {
             boolean channelChanged = !desiredChannelId.equals(notification.getChannelId());
 
             if (trampolineEnabled) {
-                boolean shouldHaveBubble = conversationBubbleReady
+                boolean shouldHaveBubble = perConversationMode
+                        && conversationBubbleReady
                         && state != null
                         && state.contentIntent != null;
                 if (!shouldUpdateActiveNotification(
@@ -247,6 +291,9 @@ final class ConversationBubbles {
                     desiredChannelId
             );
         }
+        if (sharedTrampolineMode) {
+            TrampolineBubbleHost.syncFromActive(context, active);
+        }
     }
 
     @TargetApi(29)
@@ -268,6 +315,17 @@ final class ConversationBubbles {
                     .setChannelId(channelId)
                     .setVisibility(NotificationChannels.messageLockscreenVisibility())
                     .setOnlyAlertOnce(true);
+            if (conversationId != null) {
+                if (isSharedTrampolineMode(context, conversationId)) {
+                    builder.setGroupAlertBehavior(Notification.GROUP_ALERT_SUMMARY)
+                            .setDefaults(0)
+                            .setSound(null)
+                            .setVibrate(null);
+                } else {
+                    builder.setGroupAlertBehavior(Notification.GROUP_ALERT_ALL)
+                            .setDefaults(Notification.DEFAULT_ALL);
+                }
+            }
             if (enabled) {
                 builder.setBubbleMetadata(null);
                 applyTo(context, builder, state, icon, sbn.getId());

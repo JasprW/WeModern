@@ -193,3 +193,19 @@ SystemUI 同时只展开一个 Bubble；“并存”指 Bubble 栈中保留多�
 微信版本仍可能复用现有全屏 task，因为 WeModern 无法修改 immutable PendingIntent 的
 内部 flags。目标缺失、类型无效或 token 已取消时，真实微信通知不会附加 trampoline
 Bubble，而不是回退到已经删除的固定 Home host。
+
+## 2026-08-26 重新提供共享微信 Home 模式
+
+IME A/B 结论表明，遮挡差异不是 Bridge 或 result API 本身造成，而是通知精确 token 创建的
+独立 `ChattingMainUI` 不响应 Bubble 可见区域 resize；由 `LauncherUI` 内部导航进入聊天则能
+正确适配 IME。基于这个产品取舍，trampoline 不再只有会话级模式，而是由正式开关提供两种
+互斥行为：默认会话级 Bubble 保留精确直达与多会话入口；关闭开关后使用固定共享 host，只启动
+微信 Home，由用户在内部选择对话。
+
+新的共享模式只恢复历史单 host 方案的稳定身份和 Home PendingIntent，不恢复已淘汰的实验性
+精确桥接、双 host 轮换或专用 channel。逐会话 replacement 继续存在以承载通知内容、历史和
+sync removal，但不携带 BubbleMetadata，并使用 `GROUP_ALERT_SUMMARY` 禁止重复提醒；固定 host
+复用统一 `wechat_messages_alerts` channel、固定通知 ID 与 fixed long-lived shortcut，脱离消息
+分组并负责唯一的 flyout、声音和振动。activity create 日志以 action 为空的 `LauncherUI`
+识别共享 Bubble task，避免将它误判为全屏微信。该模式的实际 IME、提醒抑制、host 更新与
+task 返回行为仍需 Pixel 真机验收。

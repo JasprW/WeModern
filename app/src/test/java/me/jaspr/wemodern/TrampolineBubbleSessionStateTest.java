@@ -65,4 +65,15 @@ public class TrampolineBubbleSessionStateTest {
         assertFalse(TrampolineBubbleSessionState.isEmbeddedTask(42));
         assertFalse(TrampolineBubbleSessionState.isEmbeddedSessionActive());
     }
+
+    @Test
+    public void sharedHostTaskIsTrackedSeparatelyFromConversationTasks() {
+        TrampolineBubbleSessionState.onSharedHostLaunchStarted(51);
+        TrampolineBubbleSessionState.onEmbeddedLaunchStarted(52, "wechat_alice");
+
+        assertTrue(TrampolineBubbleSessionState.isSharedHostTask(51));
+        assertFalse(TrampolineBubbleSessionState.isSharedHostTask(52));
+        assertTrue(TrampolineBubbleSessionState.isEmbeddedTask(51));
+        assertTrue(TrampolineBubbleSessionState.isEmbeddedTask(52));
+    }
 }

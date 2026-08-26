@@ -1,8 +1,9 @@
-# Single Trampoline Bubble Host Implementation Plan (Superseded)
+# Single Trampoline Bubble Host Implementation Plan (Historical Reference)
 
-> Historical plan only. The fixed single-host architecture was removed on 2026-07-21 after
-> per-conversation Bridge Bubbles passed Pixel validation. Current behavior is documented in
-> `docs/current-implementation.md`.
+> Historical plan only. The original fixed single-host architecture was removed on 2026-07-21.
+> A simplified shared WeChat Home host returned as an optional user-selected mode on 2026-08-26,
+> without the old dedicated channel, experimental exact bridge, or dual-ID rotation. Current
+> behavior is documented in `docs/current-implementation.md`.
 
 **Goal:** Make Bubble trampoline expose exactly one stable WeChat bubble that always
 represents the latest rewritten conversation, while keeping normal mode's per-conversation

@@ -23,6 +23,7 @@ final class BubbleLaunchCleanup {
     static void clear(Context context) {
         clearAppCancelSuppression(context);
         TrampolineBubbleSessionState.onAllHostsCleared();
+        TrampolineBubbleHost.clear(context);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
