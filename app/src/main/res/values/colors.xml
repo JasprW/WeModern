@@ -1,3 +1,6 @@
 <resources>
     <color name="launcher_background">#1B5E20</color>
+    <color name="trampoline_launch_background">#FFFBFE</color>
+    <color name="trampoline_launch_container">#E7E0EC</color>
+    <color name="trampoline_launch_foreground">#49454F</color>
 </resources>

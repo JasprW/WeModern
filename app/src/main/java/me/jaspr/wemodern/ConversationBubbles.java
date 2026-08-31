@@ -86,7 +86,8 @@ final class ConversationBubbles {
             PendingIntent bridgeIntent = TrampolineBridgeActivity.createBubbleIntent(
                     context,
                     state.contentIntent,
-                    state.conversationId
+                    state.conversationId,
+                    state.title
             );
             if (bridgeIntent != null) {
                 Icon bridgeIcon = ConversationShortcuts.adaptiveBubbleIcon(context, icon);

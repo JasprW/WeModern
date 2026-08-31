@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- 优化逐会话 Bubble 打开微信前的透明等待：旧 `BubbleActivityTheme` 禁用了 starting window，Bridge 又不绘制内容，导致微信首帧出现前 Bubble 窗口短暂透明。现在 Bridge 使用独立的不透明 Material You 启动主题，第一帧显示缓存的当前会话头像并在缺失时回退 Bubble 图标；确认该帧已经绘制后立即转发微信，不设置人为最短延迟。只有启动超过 300ms 才淡入进度状态和会话标题，系统关闭动画时直接显示最终状态；共享 Home Bubble 不受影响。Pixel 9 Pro / API 37 已用相同窗口尺寸的 debug harness 确认浅色、深色及 1.3 倍字体布局，真实通知 Bubble 的快速/冷启动交接仍待下一条会话通知复测。
+- 修复逐会话 Bubble 中第一次 Back 偶发进入微信首页、无法直接收起：微信 8.0.72 可能在同一 task 内执行 `ChattingMainUI → LauncherUI` 而不及时向 stopped Bridge 交付 result。activity events watcher 现在只对已登记的逐会话 Bubble task 识别这一连续转换，随后以最多三次有界重试把 Bridge `CLEAR_TOP | SINGLE_TOP` 拉回并收起；共享 Home Bubble、普通全屏微信、不同 task 和未先进入聊天页的 `LauncherUI` 不会触发。collapse intent 继续保留 Bridge 原始会话 token，clear-top 暂不可用时也不再从 stopped Bridge 立即后台化 task，避免 Bubble 展开后自动消失。该可靠返回路径依赖既有 `READ_LOGS` 与 `NotificationService` DEBUG 初始化，真机复测待完成。
 - 将微信 `Service Accounts` / `服务号` / `服務號` 通知特化为一个固定聚合 conversation：每个服务号使用微信 source notification ID 作为独立 bot `Person`，保留自己的名称和缓存头像，最新服务号头像负责通知、shortcut 与 Bubble 主头像；切换微信语言不再生成重复会话。微信当次未提供 `largeIcon` 时优先复用 participant 缓存；升级后还会把能够按当前 sender 精确归属的旧私聊头像迁入 participant 缓存，后续微信新头像会继续覆盖，不使用归属不明的旧聚合头像。聚合通知仍只打开最新服务号，打开、已读和清理按整个服务号会话处理。Bubbles 设置新增与私聊、群聊互不影响的“服务号”默认开关，使用专属机器人图标与 Per-conversation settings 区分，并继续支持已知会话 Always allow / Never allow 覆盖；关闭服务号 Bubble 不影响普通横幅提醒。
 
 ## 1.8.0 — 2026-08-26

@@ -90,4 +90,14 @@ public class TrampolineBridgeActivityTest {
                 false
         ));
     }
+
+    @Test
+    public void missingClearTopDoesNotBackgroundABridgeStillCoveredByWeChat() {
+        assertFalse(TrampolineBridgeActivity.shouldCollapseImmediatelyWhenClearTopUnavailable(
+                true
+        ));
+        assertTrue(TrampolineBridgeActivity.shouldCollapseImmediatelyWhenClearTopUnavailable(
+                false
+        ));
+    }
 }

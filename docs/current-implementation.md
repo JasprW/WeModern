@@ -2,7 +2,7 @@
 
 - 当前版本：1.8.0（`versionCode` 35）
 - 支持范围：`minSdk` 26；编译和目标 API 37（Android 17）
-- 最近代码状态：2026-08-26
+- 最近代码状态：2026-08-31
 
 ## 0. 微信通知采集调试模式
 
@@ -50,13 +50,19 @@ Android 12（API 31）及以上可启用 trampoline，并通过“会话级气�
 
 会话级模式下，每条合资格的会话替换通知直接承载自己的 BubbleMetadata。稳定的 per-conversation 通知 ID、shortcut、LocusId、Bridge URI 与 PendingIntent identity 共同把不同会话拆成独立 document task；同一会话的新消息只更新原 Bubble，不为每条消息新增 Bubble。该模式能直接打开精确聊天，但微信独立 `ChattingMainUI` 在当前 Pixel / 微信版本中可能不响应 Bubble 可见区域的 IME resize，导致键盘遮挡输入区域。
 
-Bubble 的 mutable Activity PendingIntent 先启动 non-exported、可嵌入的 `TrampolineBridgeActivity`，Bridge 验证目标是 `com.tencent.mm` 创建的 Activity token 后，再以 result 方式转发该会话最新通知的 immutable `contentIntent`。目标提交成功时，Bridge 同步把该会话标记为已打开：只清空服务内的 `MessagingStyle` 历史和本地 Bubble 消息快照，继续保留 Bubble host、shortcut、最新微信 `PendingIntent` 与 task；因此下一条新消息从新的未读批次开始，不会重新带上已经打开过的消息，也不会误清其他会话。Bridge 常驻为 Bubble task 根。微信对话结束时如果直接露出 Bridge，生命周期兜底会把 task 移到后台；如果微信先启动 `LauncherUI` 再结束 `ChattingMainUI`，result 回调会在同一个 AppTask 中以 `CLEAR_TOP | SINGLE_TOP` 恢复 Bridge、清除其上的微信 Home，然后再把 task 移到后台。两条路径都让第一次 Back 收起而不是删除 Bubble，再次展开时重新转发会话目标。由于 WeModern 不能修改微信 immutable token 的内部 task flags，其他 Android 或微信版本仍可能复用全屏 task；目标缺失、类型无效或 token 已取消时，该条真实微信通知不会附加 trampoline Bubble。
+逐会话 Bubble 的启动过程使用独立 `TrampolineBridgeTheme`，不再关闭系统 starting window。Android 12 及以上首先显示跟随系统浅色、深色与动态中性色板的不透明 surface，避免 SystemUI 扩大 Bubble 后短暂透出背后内容；系统层不显示静态应用头像，Bridge 第一帧从现有 conversation shortcut 头像缓存读取当前会话头像并以圆形裁剪显示，缓存缺失时才回退统一 Bubble 图标。Bridge 等第一帧提交后再转发微信 immutable token，只增加一个绘制帧而不设置人为最短等待；启动超过 300ms 时才淡入小型进度状态和“正在微信中打开会话”，普通快速启动不会闪烁 spinner 或文案。头像与状态只使用 alpha / scale 短动效，并在系统关闭动画时直接呈现最终状态。共享微信 Home 模式不经过 Bridge，因此不显示该会话加载页。
+
+Bubble 的 mutable Activity PendingIntent 先启动 non-exported、可嵌入的 `TrampolineBridgeActivity`，Bridge 验证目标是 `com.tencent.mm` 创建的 Activity token 后，再以 result 方式转发该会话最新通知的 immutable `contentIntent`。目标提交成功时，Bridge 同步把该会话标记为已打开：只清空服务内的 `MessagingStyle` 历史和本地 Bubble 消息快照，继续保留 Bubble host、shortcut、最新微信 `PendingIntent` 与 task；因此下一条新消息从新的未读批次开始，不会重新带上已经打开过的消息，也不会误清其他会话。Bridge 常驻为 Bubble task 根。微信对话结束时如果直接露出 Bridge，生命周期兜底会把 task 移到后台；result 回调能够及时到达时，Bridge 会在同一个 AppTask 中以 `CLEAR_TOP | SINGLE_TOP` 恢复自身、清除其上的微信 Home，再把 task 移到后台。
+
+微信 8.0.72 的真机路径确认 result 回调并不稳定：第一次 Back 可能先在同一个 Bubble task 中恢复 `LauncherUI`，而 Bridge 仍保持 stopped。为覆盖这条路径，现有 activity events watcher 增加逐 task 的窄状态机；只有已登记的逐会话 Bubble task 明确连续 resume `ChattingMainUI` / 旧版 `ChattingUI` 再 resume `LauncherUI` 时，才从服务侧对该 AppTask 发出最多三次有界的 Bridge `CLEAR_TOP | SINGLE_TOP` 请求。未先看到聊天页、不同 task、普通全屏微信以及共享 Home Bubble 均不会触发。collapse intent 不再覆盖 Bridge 保存的原始会话 token，重新展开仍可转发同一会话。如果 clear-top 暂不可用且微信仍盖在 Bridge 上，result 路径也不再立即把 task 移到后台，避免展开后无操作自动消失，而是等待 watcher 或 Bridge 自身恢复。
+
+日志状态机依赖 `READ_LOGS` 与 `persist.log.tag.NotificationService=DEBUG`；缺少这项 ADB 初始化时，仍保留 result 与 Bridge 生命周期兜底，但不能保证覆盖微信 Home 挡住 Bridge 的返回分支。由于 WeModern 不能修改微信 immutable token 的内部 task flags，其他 Android 或微信版本仍可能复用全屏 task；目标缺失、类型无效或 token 已取消时，该条真实微信通知不会附加 trampoline Bubble。
 
 Bridge session 以 task ID 和会话 ID 并行跟踪，移除一个 task 不会清理其他会话。微信进入聊天后会批量撤销多个源通知；嵌入 session 期间，所有仍带 BubbleMetadata、匹配 shortcut 且被系统标记为 `FLAG_BUBBLE` 的活动会话替换都会继续作为 host 保留，避免展开后一个 Bubble 时关闭前一个。源映射消费后，SystemUI 可能再次回送同一个 host 的 Bubble 状态更新；只要内存会话状态、稳定通知 ID、shortcut、metadata 与 `FLAG_BUBBLE` 仍完整，孤儿清理也会保留它。进程重建后缺少会话状态的真正 orphan、未成为 Bubble 的普通通知、用户显式拖走 Bubble、打开全屏微信或关闭功能仍会清理对应范围。
 
 关闭“会话级气泡”后进入共享微信 Home 模式。合资格消息仍各自保留 replacement、shortcut、历史和 sync-removal 映射，但逐会话通知不再携带 BubbleMetadata，并通过 `GROUP_ALERT_SUMMARY` 禁止重复提醒。最新合资格消息会更新一个固定通知 ID、固定 long-lived shortcut 和固定 mutable 微信 Home PendingIntent 的共享 host；只有该 host 脱离消息分组、携带 BubbleMetadata 并负责 flyout、声音和振动。展开时只在 Bubble task 中启动微信 `LauncherUI`，不会调用通知中的精确会话 token，因此需要用户在微信内自行进入对话，但 `LauncherUI` 内部导航对 IME resize 的适配更好，不会触发已知的独立 `ChattingMainUI` 输入栏遮挡路径。activity log watcher 使用 action 为空的微信 Home create 事件识别共享 Bubble task，使其不被误判为全屏微信；task 移除、关闭 trampoline/聊天气泡/改写，或通过 WeModern 入口进入全屏微信时会清理固定 host 和 shortcut。
 
-Pixel 9 Pro / API 37 已完成双会话真机验收：不同会话 Bubble 可同时保留、分别进入对应聊天，直接 Back 收起当前 Bubble；后续消息更新后重新展开会进入该会话的新目标。另一次明确走 `ChattingMainUI → LauncherUI` 的返回测试确认，result + AppTask clear-top 路径会在第一次 Back 直接收起，不再先显示微信 Home。此前“一开后一个就关前一个”的问题已通过扩大 APP_CANCEL 期间的活动 Bubble host 保护范围修复。证据与平台风险见 [Trampoline PendingIntent bridge](explorations/2026-07-20-trampoline-pending-intent-bridge.md)和[多会话 Trampoline Bubble](explorations/2026-07-21-multi-conversation-trampoline-bubbles.md)。
+Pixel 9 Pro / API 37 已完成双会话基础验收：不同会话 Bubble 可同时保留、分别进入对应聊天；后续消息更新后重新展开会进入该会话的新目标。2026-08-31 在微信 8.0.72 上复现 result 未及时返回、第一次 Back 露出微信 Home 后，已实现上述 activity-log clear-top 状态机并完成本地状态机回归测试；安装后的第一次 Back、重新展开和多 Bubble 保留仍需真机复测。此前“一开后一个就关前一个”的问题已通过扩大 APP_CANCEL 期间的活动 Bubble host 保护范围修复。证据与平台风险见 [Trampoline PendingIntent bridge](explorations/2026-07-20-trampoline-pending-intent-bridge.md)和[多会话 Trampoline Bubble](explorations/2026-07-21-multi-conversation-trampoline-bubbles.md)。
 
 两种 trampoline 与常规模式共享唯一消息 channel `wechat_messages_alerts`。会话级模式依赖 Pixel SystemUI 对“已实际启动的 Bubble”抑制普通 heads-up；共享模式则由固定 host 承担 alert，逐会话 child 使用公开的分组 alert 行为静默。声音、振动和用户对该 channel 的设置仍统一适用。旧 quiet 消息 channel 和固定 host 专用 channel 继续作为升级清理项；共享模式复用统一消息 channel，并只使用主固定 host ID，历史 legacy / secondary ID 会在更新和清理时取消。
 

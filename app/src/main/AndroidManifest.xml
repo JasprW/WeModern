@@ -68,7 +68,7 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:resizeableActivity="true"
-            android:theme="@style/BubbleActivityTheme" />
+            android:theme="@style/TrampolineBridgeTheme" />
 
         <receiver
             android:name=".BubbleDismissReceiver"

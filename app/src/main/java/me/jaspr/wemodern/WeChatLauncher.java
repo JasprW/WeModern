@@ -52,9 +52,26 @@ final class WeChatLauncher {
     }
 
     static boolean isBubbleRootActivity(String componentName, String action) {
-        if (action != null || componentName == null) return false;
+        return action == null && isLauncherActivity(componentName);
+    }
+
+    static boolean isLauncherActivity(String componentName) {
+        if (componentName == null) return false;
         return componentName.equals(WECHAT_PACKAGE + "/.ui.LauncherUI")
                 || componentName.equals(WECHAT_PACKAGE + "/com.tencent.mm.ui.LauncherUI");
+    }
+
+    static boolean isChattingActivity(String componentName) {
+        if (componentName == null) return false;
+        return componentName.equals(
+                WECHAT_PACKAGE + "/.ui.chatting.variants.ChattingMainUI"
+        ) || componentName.equals(
+                WECHAT_PACKAGE + "/com.tencent.mm.ui.chatting.variants.ChattingMainUI"
+        ) || componentName.equals(
+                WECHAT_PACKAGE + "/.ui.chatting.ChattingUI"
+        ) || componentName.equals(
+                WECHAT_PACKAGE + "/com.tencent.mm.ui.chatting.ChattingUI"
+        );
     }
 
     private static boolean open(

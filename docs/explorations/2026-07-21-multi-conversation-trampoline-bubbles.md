@@ -126,6 +126,51 @@ task ID 的 `ActivityManager.AppTask` 启动带 `CLEAR_TOP | SINGLE_TOP` 的内�
 直接收起 Bubble。若某个系统只在 Bridge 已恢复后才投递结果，原有 `onResume` 路径仍会收起，
 但无法保证提前清掉微信 Home；这仍是跨应用 immutable Activity token 的平台边界。
 
+## 2026-08-31 微信 8.0.72 返回状态机
+
+后续真机重新复现证明上面的 result 路径不是稳定契约：task `24397` 中第一次 Back 先由微信
+结束 `ChattingMainUI` 并恢复 `LauncherUI`，Bridge 始终处于 stopped，既没有恢复也没有收到
+可执行 clear-top 的 result，因此用户看到微信 Home。当前修复不再等待单一生命周期信号，而是
+复用已经为前台判定和同步移除运行的 activity events watcher：
+
+- Bridge 登记逐会话 task 后，只在同一 task resume 过 `ChattingMainUI` 或旧版 `ChattingUI`
+  的前提下，接受紧随其后的 `LauncherUI` resume；未登记 task、共享 Home task、不同 task、
+  普通全屏微信和没有聊天前序的 Home 都不会触发。
+- 命中后由通知服务在主线程通过对应 `ActivityManager.AppTask` 启动 Bridge 的
+  `CLEAR_TOP | SINGLE_TOP` collapse intent，暂时找不到 task 时以 100ms / 200ms 做最多三次
+  有界尝试，避免无限轮询。
+- collapse intent 不替换 Bridge 原本保存的会话 target，因此收起后重新展开仍可转发同一
+  微信会话。一次转换只触发一次；新一轮 Bridge 转发会重置 task 状态。
+- result 先到但 AppTask 暂不可用时，如果微信仍覆盖 Bridge，不再立即调用
+  `moveTaskToBack(true)`，而是等待 watcher clear-top 或 Bridge 真正恢复，避免此前调查到的
+  “展开后无操作自动退出”风险。
+
+这条兜底依赖 `READ_LOGS` 和 `persist.log.tag.NotificationService=DEBUG`；Android 没有提供
+无需特权日志即可观察其他应用顶层 Activity 转换的普通应用 API。本地单元测试已经覆盖正向
+转换、无聊天前序、不同 task、共享 task、重复事件和失败后重新武装；安装后的第一次 Back、
+重新展开、多 Bubble 并存仍需 Pixel 9 Pro / API 37 真机复测。
+
+## 2026-08-31 Bubble 启动视觉接力
+
+逐会话 Bridge 原先沿用 `BubbleActivityTheme` 的 `windowDisablePreview=true`，自身又没有 content
+view，SystemUI 展开 Bubble 到微信 `ChattingMainUI` 首帧之间因此只能显示透明窗口。当前实现为
+Bridge 单独提供不透明 starting window，并将启动拆成连续的两层：
+
+- 系统 starting window 只显示跟随 API 31 动态中性色板、同时支持浅色与深色模式的 opaque
+  surface，不显示无法按 Intent 动态变化的静态应用头像。
+- Bridge 使用轻量 Android View 同步读取已有 conversation shortcut 头像缓存，第一帧显示圆形
+  会话头像，缺失时回退 Bubble glyph；第一帧完成后通过 `OnPreDrawListener` 立即提交微信 token，
+  只增加一次绘制机会，不添加固定 splash 时长。
+- 头像以 160ms 的轻微 alpha / scale 进入；启动超过 300ms 才显示 progress 与本地化会话标题。
+  `ValueAnimator.areAnimatorsEnabled()` 为关闭系统动画的设备提供即时状态路径。
+- 每次重新展开或 Bubble PendingIntent 更新都会重置头像和延迟状态；微信接管窗口后 Bridge
+  `onPause` 会停止未发生的加载提示。共享 Home Bubble 不使用 Bridge，保持原行为。
+
+本地资源编译和 JVM 回归已通过。Pixel 9 Pro / API 37 使用与 Bubble 相同的
+`1184×1800 px` 窗口尺寸运行 debug-only visual harness，确认真实缓存会话头像能够圆形显示，
+浅色和深色动态 surface 对比正常，1.3 倍字体可自然换为两行而不截断；harness 随后已从源码和
+安装包移除。真实通知 Bubble 的系统 starting window、快速/冷启动交接仍需下一条会话通知复测。
+
 ## 2026-08-25 展开后偶发自动退出
 
 Pixel 9 Pro / API 37 的 events buffer 保留了一次与“点击 Bubble 后立即退出并消失”

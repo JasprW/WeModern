@@ -152,7 +152,14 @@ On Android 12 or later, enabling **Bubble trampoline** reveals a mode switch.
 The default conversation mode makes each eligible conversation notification its
 own Bridge Bubble and forwards the latest WeChat-created conversation action.
 It opens the chat directly, but WeChat's input bar may be covered by the IME in
-the embedded task. Turning the mode switch off keeps one shared Bubble for all
+the embedded task. Bubble expansion uses an opaque Material You launch surface;
+the Bridge draws the cached conversation avatar for one frame before forwarding
+to WeChat, and only reveals an opening label if the handoff lasts over 300 ms.
+There is no artificial minimum delay, and a missing cached avatar falls back to
+the Bubble glyph. When WeChat returns from that chat to Home inside the same
+Bubble task, WeModern uses the activity event log to clear Home and collapse the
+Bubble on the first Back. This reliable-return path requires the `READ_LOGS` and
+`NotificationService` DEBUG setup below. Turning the mode switch off keeps one shared Bubble for all
 eligible conversations. That Bubble opens WeChat Home rather than a specific
 chat, which requires one more tap but gives WeChat the task shape that better
 adapts to the IME. The same private/group/Service Accounts defaults and conversation overrides
@@ -163,9 +170,9 @@ update, or take over a Bubble. The Message test always remains notification ID
 to Selected conversations, conversation mode may require each real conversation
 to be allowed separately, while shared mode uses one stable shortcut.
 
-To enable synchronous removal of rewritten WeChat notifications when WeChat
-cancels its original notification, also grant log access and enable debug
-notification service logs, then reboot:
+To enable synchronous removal of rewritten WeChat notifications and reliable
+first-Back collapse for conversation Bridge Bubbles, grant log access and enable
+debug notification service logs, then reboot:
 
 ```bash
 adb shell pm grant me.jaspr.wemodern android.permission.READ_LOGS

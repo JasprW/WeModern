@@ -35,6 +35,7 @@
     <string name="bubble_open_conversation">開啟對話</string>
     <string name="bubble_open_wechat_home">在泡泡內開啟微信</string>
     <string name="bubble_no_messages">沒有最近訊息</string>
+    <string name="bubble_opening_wechat">正在微信中開啟「%1$s」…</string>
     <string name="bubble_trampoline_title">泡泡跳板</string>
     <string name="bubble_trampoline_description">在 Android 泡泡內開啟微信</string>
     <string name="bubble_trampoline_per_conversation_title">每個對話獨立泡泡</string>

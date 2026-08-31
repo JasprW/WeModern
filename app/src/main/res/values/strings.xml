@@ -35,6 +35,7 @@
     <string name="bubble_open_conversation">Open conversation</string>
     <string name="bubble_open_wechat_home">Open WeChat in bubble</string>
     <string name="bubble_no_messages">No recent messages</string>
+    <string name="bubble_opening_wechat">Opening %1$s in WeChat…</string>
     <string name="bubble_trampoline_title">Bubble trampoline</string>
     <string name="bubble_trampoline_description">Open WeChat inside Android bubbles</string>
     <string name="bubble_trampoline_per_conversation_title">One bubble per conversation</string>

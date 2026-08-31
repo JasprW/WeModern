@@ -48,6 +48,8 @@ public class WeChatNotificationService extends NotificationListenerService {
     private static final long CONNECTED_STATUS_FALLBACK_DELAY_MS = 10_000L;
     private static final long LEGACY_AUDIO_MODE_POLL_INTERVAL_MS = 250L;
     private static final long CALL_RINGING_TIMEOUT_MS = 2L * 60L * 1000L;
+    private static final long TRAMPOLINE_COLLAPSE_RETRY_DELAY_MS = 100L;
+    private static final int MAX_TRAMPOLINE_COLLAPSE_ATTEMPTS = 3;
     private static final int MAX_HISTORY = 8;
     private static final int MESSAGE_GROUP_SUMMARY_ID = 0x5747534d;
     static final int CALL_REPLACEMENT_ID = 0x5743414c;
@@ -448,6 +450,12 @@ public class WeChatNotificationService extends NotificationListenerService {
                     event.taskId,
                     event.componentName
             );
+            if (TrampolineBubbleSessionState.shouldCollapseAfterActivityResumed(
+                    event.taskId,
+                    event.componentName
+            )) {
+                mainHandler.post(() -> requestTrampolineCollapse(event.taskId, 1));
+            }
             if (callSession.incomingVisible && isWeChatComponent(event.componentName)) {
                 prepareCallStatusForLaunchTransition();
                 cancelIncomingCallReplacement("wechat activity resumed");
@@ -464,6 +472,33 @@ public class WeChatNotificationService extends NotificationListenerService {
                 mainHandler.post(() -> TrampolineBubbleHost.clear(this));
             }
         }
+    }
+
+    private void requestTrampolineCollapse(int taskId, int attempt) {
+        if (!isRewriteCurrentlyEnabled()
+                || !TrampolineBubbleSessionState.isEmbeddedTask(taskId)
+                || TrampolineBubbleSessionState.isSharedHostTask(taskId)) {
+            return;
+        }
+        if (TrampolineBridgeActivity.requestCollapseForTask(
+                this,
+                taskId,
+                TrampolineBubbleSessionState.conversationIdForTask(taskId),
+                "WeChat Home resumed after conversation Back"
+        )) {
+            return;
+        }
+        if (attempt < MAX_TRAMPOLINE_COLLAPSE_ATTEMPTS) {
+            mainHandler.postDelayed(
+                    () -> requestTrampolineCollapse(taskId, attempt + 1),
+                    TRAMPOLINE_COLLAPSE_RETRY_DELAY_MS * attempt
+            );
+            return;
+        }
+        TrampolineBubbleSessionState.onCollapseRequestFailed(taskId);
+        Log.w(TAG, "unable to collapse trampoline after WeChat returned Home"
+                + ", taskId=" + taskId
+                + ", attempts=" + attempt);
     }
 
     private boolean shouldPreserveMessageReplacement(String conversationKey) {

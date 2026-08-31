@@ -49,6 +49,41 @@ final class TrampolineBubbleSessionState {
         return session != null && session.sharedHost;
     }
 
+    static synchronized String conversationIdForTask(int taskId) {
+        Session session = EMBEDDED_SESSIONS.get(taskId);
+        return session == null ? null : session.conversationId;
+    }
+
+    static synchronized boolean shouldCollapseAfterActivityResumed(
+            int taskId,
+            String componentName
+    ) {
+        Session session = EMBEDDED_SESSIONS.get(taskId);
+        if (session == null || session.sharedHost) return false;
+
+        if (WeChatLauncher.isChattingActivity(componentName)) {
+            session.chattingReturnArmed = true;
+            session.collapseRequested = false;
+            return false;
+        }
+        if (WeChatLauncher.isLauncherActivity(componentName)) {
+            if (!session.chattingReturnArmed || session.collapseRequested) return false;
+            session.chattingReturnArmed = false;
+            session.collapseRequested = true;
+            return true;
+        }
+
+        session.chattingReturnArmed = false;
+        return false;
+    }
+
+    static synchronized void onCollapseRequestFailed(int taskId) {
+        Session session = EMBEDDED_SESSIONS.get(taskId);
+        if (session == null || session.sharedHost) return;
+        session.chattingReturnArmed = true;
+        session.collapseRequested = false;
+    }
+
     static synchronized boolean onTaskRemoved(int taskId) {
         return EMBEDDED_SESSIONS.remove(taskId) != null;
     }
@@ -76,6 +111,8 @@ final class TrampolineBubbleSessionState {
     private static final class Session {
         final String conversationId;
         final boolean sharedHost;
+        boolean chattingReturnArmed;
+        boolean collapseRequested;
 
         Session(String conversationId, boolean sharedHost) {
             this.conversationId = conversationId;

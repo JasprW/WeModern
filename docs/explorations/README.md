@@ -10,7 +10,7 @@
 | [设置页滚动性能检查](2026-07-18-settings-scroll-performance.md) | 已优化 | 确认轻微卡顿主要来自超高 lazy item 的 UI/布局尖峰；记录 item 拆分、cache window、真机指标以及已撤回的字体和 ART 对照实验。 |
 | [Bubble channel 初始化调查](2026-07-20-bubble-channel-initialization.md) | 已修复 / Pixel 已验证 | API 37 上高重要性 Bubble 只显示 flyout、不显示普通 pinned HUN，但仍发声和振动；消息已合并到单一 alerting channel，旧 quiet/host channel 迁移删除。 |
 | [Trampoline PendingIntent bridge](2026-07-20-trampoline-pending-intent-bridge.md) | 已实现 / 平台限制 | trampoline 默认由 per-conversation bridge 转发最新微信 immutable 会话 token；精确桥接已在 Pixel 验收，其他系统仍可能复用全屏 task。 |
-| [多会话 Trampoline Bubble](2026-07-21-multi-conversation-trampoline-bubbles.md) | 已交付 | 默认由每个会话的替换通知作为独立 Bridge Bubble host；另提供一个只打开微信 Home、改善 IME 适配的共享 Bubble 模式。会话级模式的跨会话并存、Back 收起和新消息重定向已通过 Pixel 双会话验收。 |
+| [多会话 Trampoline Bubble](2026-07-21-multi-conversation-trampoline-bubbles.md) | 已交付 / 真机待复测 | 默认由每个会话的替换通知作为独立 Bridge Bubble host；另提供一个只打开微信 Home、改善 IME 适配的共享 Bubble 模式。逐会话启动新增不透明 Material You surface 与缓存会话头像视觉接力，微信 8.0.72 的 Home 返回分支新增 task-aware activity-log clear-top 状态机；启动视觉、第一次 Back 与重新展开待 Pixel 复测。 |
 | [服务号聚合会话](2026-08-26-service-account-conversation.md) | 已实现 / 待真机验收 | `Service Accounts` / `服务号` / `服務號` 统一为一个 conversation，各服务号作为带独立头像的 bot `Person`；Bubble 可单独开关，点击与清理由整个聚合会话承担。 |
 
 新探索文档建议采用 `YYYY-MM-DD-<topic>-feasibility.md` 命名，并写明：目标、已验证环境、证据、可行与不可行边界、依赖/风险、推荐结论和重新评估条件。

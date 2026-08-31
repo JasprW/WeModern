@@ -1,0 +1,9 @@
+<resources>
+    <style name="TrampolineBridgeTheme" parent="BubbleActivityTheme">
+        <item name="android:windowDisablePreview">false</item>
+        <item name="android:windowBackground">@color/trampoline_launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/trampoline_launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_trampoline_splash_transparent</item>
+        <item name="android:windowSplashScreenAnimationDuration">150</item>
+    </style>
+</resources>

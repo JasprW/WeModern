@@ -17,4 +17,9 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowDisablePreview">true</item>
     </style>
+
+    <style name="TrampolineBridgeTheme" parent="BubbleActivityTheme">
+        <item name="android:windowDisablePreview">false</item>
+        <item name="android:windowBackground">@color/trampoline_launch_background</item>
+    </style>
 </resources>
