@@ -28,6 +28,7 @@ final class ConversationBubblePreferences {
         private final String id;
         private final String title;
         private final boolean groupConversation;
+        private final boolean serviceAccountConversation;
         private final long lastSeenAt;
         private final long notificationCount;
         private final long avatarRevision;
@@ -37,6 +38,7 @@ final class ConversationBubblePreferences {
                 String id,
                 String title,
                 boolean groupConversation,
+                boolean serviceAccountConversation,
                 long lastSeenAt,
                 long notificationCount,
                 long avatarRevision,
@@ -45,6 +47,7 @@ final class ConversationBubblePreferences {
             this.id = id;
             this.title = title;
             this.groupConversation = groupConversation;
+            this.serviceAccountConversation = serviceAccountConversation;
             this.lastSeenAt = lastSeenAt;
             this.notificationCount = notificationCount;
             this.avatarRevision = Math.max(0L, avatarRevision);
@@ -61,6 +64,10 @@ final class ConversationBubblePreferences {
 
         boolean isGroupConversation() {
             return groupConversation;
+        }
+
+        boolean isServiceAccountConversation() {
+            return serviceAccountConversation;
         }
 
         long getLastSeenAt() {
@@ -82,6 +89,7 @@ final class ConversationBubblePreferences {
         Entry withNotification(
                 String newTitle,
                 boolean group,
+                boolean serviceAccount,
                 long seenAt,
                 long newAvatarRevision
         ) {
@@ -91,6 +99,7 @@ final class ConversationBubblePreferences {
                     id,
                     normalizeTitle(newTitle, id),
                     group,
+                    serviceAccount,
                     Math.max(lastSeenAt, normalizedSeenAt),
                     notificationCount + (newNotification ? 1L : 0L),
                     Math.max(avatarRevision, Math.max(0L, newAvatarRevision)),
@@ -103,6 +112,7 @@ final class ConversationBubblePreferences {
                     id,
                     title,
                     groupConversation,
+                    serviceAccountConversation,
                     lastSeenAt,
                     notificationCount,
                     avatarRevision,
@@ -114,6 +124,7 @@ final class ConversationBubblePreferences {
     private static final String PREFERENCES = "conversation_bubble_preferences";
     private static final String KEY_DEFAULT_PRIVATE = "default_private";
     private static final String KEY_DEFAULT_GROUP = "default_group";
+    private static final String KEY_DEFAULT_SERVICE_ACCOUNTS = "default_service_accounts";
     private static final String KEY_SORT_ORDER = "sort_order";
     private static final String KEY_CONVERSATIONS = "conversations";
 
@@ -134,6 +145,14 @@ final class ConversationBubblePreferences {
 
     static void setDefaultGroupEnabled(Context context, boolean enabled) {
         preferences(context).edit().putBoolean(KEY_DEFAULT_GROUP, enabled).apply();
+    }
+
+    static boolean isDefaultServiceAccountsEnabled(Context context) {
+        return preferences(context).getBoolean(KEY_DEFAULT_SERVICE_ACCOUNTS, true);
+    }
+
+    static void setDefaultServiceAccountsEnabled(Context context, boolean enabled) {
+        preferences(context).edit().putBoolean(KEY_DEFAULT_SERVICE_ACCOUNTS, enabled).apply();
     }
 
     static SortOrder getSortOrder(Context context) {
@@ -167,10 +186,12 @@ final class ConversationBubblePreferences {
             String conversationId,
             CharSequence title,
             boolean groupConversation,
+            boolean serviceAccountConversation,
             long seenAt,
             long avatarRevision
     ) {
         if (conversationId == null || conversationId.isEmpty()) return;
+        conversationId = canonicalConversationId(conversationId, title);
         List<Entry> entries = load(context);
         int index = indexOf(entries, conversationId);
         String normalizedTitle = normalizeTitle(
@@ -182,6 +203,7 @@ final class ConversationBubblePreferences {
                     conversationId,
                     normalizedTitle,
                     groupConversation,
+                    serviceAccountConversation,
                     Math.max(0L, seenAt),
                     1L,
                     Math.max(0L, avatarRevision),
@@ -191,6 +213,7 @@ final class ConversationBubblePreferences {
             entries.set(index, entries.get(index).withNotification(
                     normalizedTitle,
                     groupConversation,
+                    serviceAccountConversation,
                     seenAt,
                     avatarRevision
             ));
@@ -204,6 +227,7 @@ final class ConversationBubblePreferences {
             Override override
     ) {
         if (conversationId == null || conversationId.isEmpty()) return;
+        conversationId = canonicalConversationId(conversationId, null);
         List<Entry> entries = load(context);
         int index = indexOf(entries, conversationId);
         if (index < 0) return;
@@ -218,15 +242,23 @@ final class ConversationBubblePreferences {
     static synchronized boolean isEnabled(Context context, String conversationId) {
         boolean defaultPrivate = isDefaultPrivateEnabled(context);
         boolean defaultGroup = isDefaultGroupEnabled(context);
+        boolean defaultServiceAccounts = isDefaultServiceAccountsEnabled(context);
         if (conversationId == null || conversationId.isEmpty()) return defaultPrivate;
+        conversationId = canonicalConversationId(conversationId, null);
         List<Entry> entries = load(context);
         int index = indexOf(entries, conversationId);
-        if (index < 0) return defaultPrivate;
+        if (index < 0) {
+            return ServiceAccountConversation.isConversationId(conversationId)
+                    ? defaultServiceAccounts
+                    : defaultPrivate;
+        }
         Entry entry = entries.get(index);
         return resolve(
                 defaultPrivate,
                 defaultGroup,
+                defaultServiceAccounts,
                 entry.groupConversation,
+                entry.serviceAccountConversation,
                 entry.override
         );
     }
@@ -234,11 +266,14 @@ final class ConversationBubblePreferences {
     static boolean resolve(
             boolean defaultPrivate,
             boolean defaultGroup,
+            boolean defaultServiceAccounts,
             boolean groupConversation,
+            boolean serviceAccountConversation,
             Override override
     ) {
         if (override == Override.ENABLED) return true;
         if (override == Override.DISABLED) return false;
+        if (serviceAccountConversation) return defaultServiceAccounts;
         return groupConversation ? defaultGroup : defaultPrivate;
     }
 
@@ -267,6 +302,12 @@ final class ConversationBubblePreferences {
         return -1;
     }
 
+    private static String canonicalConversationId(String conversationId, CharSequence title) {
+        return ServiceAccountConversation.isLegacyConversation(conversationId, title)
+                ? ServiceAccountConversation.CONVERSATION_ID
+                : conversationId;
+    }
+
     private static List<Entry> load(Context context) {
         String value = preferences(context).getString(KEY_CONVERSATIONS, "[]");
         List<Entry> entries = new ArrayList<>();
@@ -277,15 +318,25 @@ final class ConversationBubblePreferences {
                 if (json == null) continue;
                 String id = json.optString("id", "");
                 if (id.isEmpty()) continue;
-                entries.add(new Entry(
-                        id,
-                        normalizeTitle(json.optString("title", ""), id),
-                        json.optBoolean("group", false),
+                String title = normalizeTitle(json.optString("title", ""), id);
+                boolean serviceAccount = json.optBoolean("serviceAccounts", false)
+                        || ServiceAccountConversation.isLegacyConversation(id, title);
+                Entry entry = new Entry(
+                        serviceAccount ? ServiceAccountConversation.CONVERSATION_ID : id,
+                        title,
+                        serviceAccount || json.optBoolean("group", false),
+                        serviceAccount,
                         Math.max(0L, json.optLong("lastSeenAt", 0L)),
                         Math.max(0L, json.optLong("notificationCount", 0L)),
                         Math.max(0L, json.optLong("avatarRevision", 0L)),
                         parseOverride(json.optString("override", Override.DEFAULT.name()))
-                ));
+                );
+                int existingIndex = indexOf(entries, entry.id);
+                if (existingIndex < 0) {
+                    entries.add(entry);
+                } else {
+                    entries.set(existingIndex, merge(entries.get(existingIndex), entry));
+                }
             }
         } catch (JSONException ignored) {
             return new ArrayList<>();
@@ -301,6 +352,7 @@ final class ConversationBubblePreferences {
                 json.put("id", entry.id);
                 json.put("title", entry.title);
                 json.put("group", entry.groupConversation);
+                json.put("serviceAccounts", entry.serviceAccountConversation);
                 json.put("lastSeenAt", entry.lastSeenAt);
                 json.put("notificationCount", entry.notificationCount);
                 json.put("avatarRevision", entry.avatarRevision);
@@ -318,6 +370,24 @@ final class ConversationBubblePreferences {
         } catch (IllegalArgumentException | NullPointerException ignored) {
             return Override.DEFAULT;
         }
+    }
+
+    private static Entry merge(Entry first, Entry second) {
+        Entry newer = second.lastSeenAt >= first.lastSeenAt ? second : first;
+        Entry older = newer == second ? first : second;
+        Override override = newer.override != Override.DEFAULT
+                ? newer.override
+                : older.override;
+        return new Entry(
+                newer.id,
+                newer.title,
+                first.groupConversation || second.groupConversation,
+                first.serviceAccountConversation || second.serviceAccountConversation,
+                Math.max(first.lastSeenAt, second.lastSeenAt),
+                first.notificationCount + second.notificationCount,
+                Math.max(first.avatarRevision, second.avatarRevision),
+                override
+        );
     }
 
     private static SortOrder parseSortOrder(String value) {

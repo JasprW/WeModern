@@ -32,6 +32,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,8 @@ final class ConversationShortcuts {
     private static final String TAG = "WeModern";
     private static final String STORE = "conversation_shortcuts";
     private static final String KEY_RECENT = "recent";
+    private static final String KEY_SERVICE_ACCOUNT_ID_MIGRATED =
+            "service_account_id_migrated";
     private static final String ICON_DIRECTORY = "conversation_shortcut_icons";
     private static final String ICON_FORMAT_MARKER = ".adaptive_bubble_safe_zone_v4";
     private static final String SETTINGS_SHORTCUT_ID = "wemodern_settings";
@@ -192,13 +195,18 @@ final class ConversationShortcuts {
     static Icon circleAvatarIcon(Context context, Icon source) {
         if (source == null) return null;
         try {
-            Drawable drawable = source.loadDrawable(context);
-            Bitmap bitmap = renderCircularIconDrawable(drawable);
+            Bitmap bitmap = circularAvatarBitmap(context, source);
             return bitmap == null ? source : Icon.createWithBitmap(bitmap);
         } catch (RuntimeException e) {
             Log.w(TAG, "failed to crop conversation avatar", e);
             return source;
         }
+    }
+
+    static Bitmap circularAvatarBitmap(Context context, Icon source) {
+        if (source == null) return null;
+        Drawable drawable = source.loadDrawable(context);
+        return renderCircularIconDrawable(drawable);
     }
 
     static Icon adaptiveBubbleIcon(Context context, Icon source) {
@@ -295,11 +303,19 @@ final class ConversationShortcuts {
                 .setIntent(intent);
         if (Build.VERSION.SDK_INT >= 29) {
             builder.setLocusId(new android.content.LocusId(entry.id));
-            builder.setPerson(new Person.Builder()
-                    .setName(entry.label)
-                    .setKey(entry.id)
-                    .setIcon(shortcutIcon)
-                    .build());
+            Person[] serviceAccountParticipants =
+                    ServiceAccountConversation.isConversationId(entry.id)
+                            ? ServiceAccountParticipants.getPersons(context)
+                            : new Person[0];
+            if (serviceAccountParticipants.length > 0) {
+                builder.setPersons(serviceAccountParticipants);
+            } else {
+                builder.setPerson(new Person.Builder()
+                        .setName(entry.label)
+                        .setKey(entry.id)
+                        .setIcon(shortcutIcon)
+                        .build());
+            }
         }
         if (Build.VERSION.SDK_INT >= 30) {
             builder.setLongLived(true);
@@ -331,6 +347,7 @@ final class ConversationShortcuts {
             int reservedShortcutSlots) {
         int maxShortcutCount = manager.getMaxShortcutCountPerActivity();
         if (maxShortcutCount == 0) return false;
+        migrateLegacyServiceAccountShortcuts(context, manager);
         int conversationCount = launcherConversationCount(
                 recent.size(), maxShortcutCount, reservedShortcutSlots);
         List<ShortcutInfo> shortcuts = new ArrayList<>(conversationCount + 1);
@@ -595,7 +612,19 @@ final class ConversationShortcuts {
                 JSONObject object = array.getJSONObject(index);
                 String id = object.optString("id", "");
                 String label = object.optString("label", "");
-                if (!id.isEmpty() && !label.isEmpty()) result.add(new Entry(id, label));
+                if (ServiceAccountConversation.isLegacyConversation(id, label)) {
+                    id = ServiceAccountConversation.CONVERSATION_ID;
+                }
+                if (!id.isEmpty() && !label.isEmpty()) {
+                    boolean duplicate = false;
+                    for (Entry entry : result) {
+                        if (id.equals(entry.id)) {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (!duplicate) result.add(new Entry(id, label));
+                }
             }
         } catch (JSONException e) {
             Log.w(TAG, "failed to restore recent conversation shortcuts", e);
@@ -619,6 +648,26 @@ final class ConversationShortcuts {
 
     private static SharedPreferences preferences(Context context) {
         return context.getSharedPreferences(STORE, Context.MODE_PRIVATE);
+    }
+
+    private static void migrateLegacyServiceAccountShortcuts(
+            Context context,
+            ShortcutManager manager
+    ) {
+        SharedPreferences preferences = preferences(context);
+        if (preferences.getBoolean(KEY_SERVICE_ACCOUNT_ID_MIGRATED, false)) return;
+        List<String> legacyIds = Arrays.asList(
+                ServiceAccountConversation.legacyConversationIds()
+        );
+        try {
+            manager.removeDynamicShortcuts(legacyIds);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                manager.removeLongLivedShortcuts(legacyIds);
+            }
+            preferences.edit().putBoolean(KEY_SERVICE_ACCOUNT_ID_MIGRATED, true).apply();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            Log.w(TAG, "failed to migrate legacy service account shortcuts", e);
+        }
     }
 
     private static final class Entry {

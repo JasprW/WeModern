@@ -43,11 +43,13 @@
     <string name="bubble_trampoline_bubbles_required_description">开启聊天气泡后可设置</string>
     <string name="bubble_trampoline_system_required_description">请先在 Android 设置中允许气泡</string>
     <string name="bubble_defaults_title">会话设置</string>
-    <string name="bubble_defaults_description">设置私聊和群聊的默认气泡行为，并按需覆盖特定会话。</string>
+    <string name="bubble_defaults_description">设置私聊、群聊和服务号的默认气泡行为，并按需覆盖特定会话。</string>
     <string name="bubble_default_private_title">私聊</string>
     <string name="bubble_default_private_description">默认允许私聊使用气泡</string>
     <string name="bubble_default_group_title">群聊</string>
     <string name="bubble_default_group_description">默认允许群聊使用气泡</string>
+    <string name="bubble_default_service_accounts_title">服务号</string>
+    <string name="bubble_default_service_accounts_description">允许合并后的服务号会话使用气泡</string>
     <string name="bubble_per_conversation_title">逐会话设置</string>
     <string name="bubble_per_conversation_description">为特定已知会话单独覆盖默认气泡设置</string>
     <string name="bubble_per_conversation_sheet_description">选择一个已知会话，单独覆盖其默认气泡行为。</string>
@@ -55,9 +57,10 @@
     <string name="bubble_sort_recent">最近使用</string>
     <string name="bubble_sort_count">通知最多</string>
     <string name="bubble_no_known_conversations">收到微信消息后，会话会显示在这里。</string>
-    <string name="bubble_identity_warning">逐会话设置依赖微信通知中的来源名称。修改昵称或备注、修改群聊名称、或切换微信语言后，已有设置可能无法继续匹配。</string>
+    <string name="bubble_identity_warning">私聊和群聊设置依赖微信通知中的来源名称；修改昵称、备注或群名后，已有设置可能无法继续匹配。服务号在支持的微信语言间使用同一个固定身份。</string>
     <string name="bubble_conversation_type_private">私聊</string>
     <string name="bubble_conversation_type_group">群聊</string>
+    <string name="bubble_conversation_type_service_accounts">服务号</string>
     <string name="bubble_conversation_type_with_count">%1$s · %2$s</string>
     <string name="bubble_conversation_uses_default">默认：%1$s</string>
     <string name="bubble_conversation_override_enabled">开启</string>
@@ -69,6 +72,7 @@
     <string name="bubble_override_default_title">使用默认设置</string>
     <string name="bubble_override_default_private_description">跟随私聊默认设置 · %1$s</string>
     <string name="bubble_override_default_group_description">跟随群聊默认设置 · %1$s</string>
+    <string name="bubble_override_default_service_accounts_description">跟随服务号默认设置 · %1$s</string>
     <string name="bubble_override_enabled_title">始终允许</string>
     <string name="bubble_override_enabled_description">即使对应会话默认关闭，也为此会话添加气泡支持</string>
     <string name="bubble_override_disabled_title">始终禁止</string>

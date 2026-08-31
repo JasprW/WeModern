@@ -20,8 +20,10 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -86,6 +88,7 @@ public class WeChatNotificationService extends NotificationListenerService {
         super.onCreate();
         activeInstance = this;
         audioManager = getSystemService(AudioManager.class);
+        ServiceAccountParticipants.migrateLegacyAvatars(this);
         rewriteEnabled = NotificationDebugPreferences.isRewriteEnabled(this);
         debugPreferencesListener = (sharedPreferences, key) ->
                 mainHandler.post(this::refreshRewriteMode);
@@ -600,31 +603,42 @@ public class WeChatNotificationService extends NotificationListenerService {
                     key -> new ArrayDeque<>()
             );
             Icon originalSenderIcon = resolveSenderIcon(original);
-            Icon circularSenderIcon = ConversationShortcuts.circleAvatarIcon(
-                    this,
-                    originalSenderIcon
-            );
+            Icon circularSenderIcon;
+            if (parsed.serviceAccountConversation) {
+                circularSenderIcon = ServiceAccountParticipants.record(
+                        this,
+                        parsed.senderKey,
+                        parsed.sender,
+                        originalSenderIcon,
+                        sbn.getPostTime()
+                );
+            } else {
+                circularSenderIcon = ConversationShortcuts.circleAvatarIcon(
+                        this,
+                        originalSenderIcon
+                );
+            }
             Message message = new Message(
                     parsed.sender,
                     parsed.text,
                     sbn.getPostTime(),
-                    circularSenderIcon
+                    circularSenderIcon,
+                    parsed.senderKey,
+                    parsed.serviceAccountConversation
             );
-            if (!containsRecentDuplicate(history, message)) {
-                history.addLast(message);
-                while (history.size() > MAX_HISTORY) history.removeFirst();
-            }
+            addOrUpdateRecentMessage(history, message);
 
             long avatarRevision = ConversationShortcuts.updateAvatarCache(
                     this,
                     parsed.conversationKey,
-                    originalSenderIcon
+                    originalSenderIcon != null ? originalSenderIcon : circularSenderIcon
             );
             ConversationBubblePreferences.record(
                     this,
                     parsed.conversationKey,
                     parsed.title,
                     parsed.groupConversation,
+                    parsed.serviceAccountConversation,
                     sbn.getPostTime(),
                     avatarRevision
             );
@@ -700,9 +714,14 @@ public class WeChatNotificationService extends NotificationListenerService {
                 .setSmallIcon(smallIcon)
                 .setContentTitle(parsed.title)
                 .setContentText(contentText)
-                // A group notification's per-message sender is still shown as text, but
-                // the source notification supplies only one avatar, not one per sender.
-                .setStyle(buildMessageStyle(parsed, history, !parsed.groupConversation))
+                // Normal group notifications expose the group's avatar, not each sender's.
+                // Service Accounts are different: every source notification carries the
+                // latest service participant's avatar, so preserve it on that Person.
+                .setStyle(buildMessageStyle(
+                        parsed,
+                        history,
+                        !parsed.groupConversation || parsed.serviceAccountConversation
+                ))
                 .setWhen(sbn.getPostTime())
                 .setShowWhen(true)
                 .setDefaults(Notification.DEFAULT_ALL)
@@ -868,6 +887,8 @@ public class WeChatNotificationService extends NotificationListenerService {
         for (Message message : history) {
             if (Build.VERSION.SDK_INT >= 28) {
                 Person.Builder sender = new Person.Builder().setName(message.sender);
+                if (message.senderKey != null) sender.setKey(message.senderKey);
+                if (message.bot) sender.setBot(true);
                 if (includeSenderIcons && message.senderIcon != null) {
                     sender.setIcon(message.senderIcon);
                 }
@@ -1859,15 +1880,30 @@ public class WeChatNotificationService extends NotificationListenerService {
         return String.valueOf(reason);
     }
 
-    private static boolean containsRecentDuplicate(ArrayDeque<Message> history, Message candidate) {
-        for (Message message : history) {
+    private static void addOrUpdateRecentMessage(
+            ArrayDeque<Message> history,
+            Message candidate
+    ) {
+        List<Message> messages = new ArrayList<>(history);
+        for (int index = 0; index < messages.size(); index++) {
+            Message message = messages.get(index);
             if (TextUtils.equals(message.sender, candidate.sender)
                     && TextUtils.equals(message.text, candidate.text)
                     && Math.abs(message.when - candidate.when) < 5000) {
-                return true;
+                if (candidate.senderIcon != null) {
+                    messages.set(index, message.withSender(
+                            candidate.senderIcon,
+                            candidate.senderKey,
+                            candidate.bot
+                    ));
+                    history.clear();
+                    history.addAll(messages);
+                }
+                return;
             }
         }
-        return false;
+        history.addLast(candidate);
+        while (history.size() > MAX_HISTORY) history.removeFirst();
     }
 
     private static int stableId(String key) {
@@ -2021,12 +2057,27 @@ public class WeChatNotificationService extends NotificationListenerService {
         final CharSequence text;
         final long when;
         final Icon senderIcon;
+        final String senderKey;
+        final boolean bot;
 
-        Message(CharSequence sender, CharSequence text, long when, Icon senderIcon) {
+        Message(
+                CharSequence sender,
+                CharSequence text,
+                long when,
+                Icon senderIcon,
+                String senderKey,
+                boolean bot
+        ) {
             this.sender = sender;
             this.text = text;
             this.when = when;
             this.senderIcon = senderIcon;
+            this.senderKey = senderKey;
+            this.bot = bot;
+        }
+
+        Message withSender(Icon icon, String key, boolean senderIsBot) {
+            return new Message(sender, text, when, icon, key, senderIsBot);
         }
     }
 
@@ -2036,14 +2087,19 @@ public class WeChatNotificationService extends NotificationListenerService {
         final CharSequence sender;
         final CharSequence text;
         final boolean groupConversation;
+        final boolean serviceAccountConversation;
+        final String senderKey;
 
         ParsedNotification(String conversationKey, CharSequence title, CharSequence sender,
-                           CharSequence text, boolean groupConversation) {
+                           CharSequence text, boolean groupConversation,
+                           boolean serviceAccountConversation, String senderKey) {
             this.conversationKey = conversationKey;
             this.title = title;
             this.sender = sender;
             this.text = text;
             this.groupConversation = groupConversation;
+            this.serviceAccountConversation = serviceAccountConversation;
+            this.senderKey = senderKey;
         }
     }
 
@@ -2114,19 +2170,44 @@ public class WeChatNotificationService extends NotificationListenerService {
             String channel = channelId(n);
             if (!isConversationChannel(channel, n)) return null;
 
+            return parseMessage(title, text, n.tickerText, sbn.getId());
+        }
+
+        static ParsedNotification parseMessage(
+                CharSequence title,
+                CharSequence text,
+                CharSequence tickerText,
+                int notificationId
+        ) {
+            if (isEmpty(title) || isEmpty(text)) return null;
             String titleString = clean(title);
             String body = clean(text);
-            String ticker = n.tickerText == null ? "" : clean(n.tickerText);
+            String ticker = tickerText == null ? "" : clean(tickerText);
 
             ParsedText parsedBody = parseBody(titleString, body);
             ParsedText parsedTicker = ticker.isEmpty() ? null : parseBody(titleString, ticker);
             ParsedText chosen = parsedTicker != null && !isEmpty(parsedTicker.text) ? parsedTicker : parsedBody;
             if (chosen == null || isEmpty(chosen.text)) return null;
 
-            boolean group = chosen.sender != null && !TextUtils.equals(chosen.sender, titleString);
+            boolean serviceAccounts = ServiceAccountConversation.isContainerTitle(titleString);
+            boolean group = serviceAccounts
+                    || (chosen.sender != null && !chosen.sender.equals(titleString));
             CharSequence sender = group ? chosen.sender : titleString;
-            String conversationKey = "wechat:" + titleString;
-            return new ParsedNotification(conversationKey, titleString, sender, chosen.text, group);
+            String conversationKey = serviceAccounts
+                    ? ServiceAccountConversation.CONVERSATION_ID
+                    : "wechat:" + titleString;
+            String senderKey = serviceAccounts
+                    ? ServiceAccountConversation.participantKey(notificationId)
+                    : null;
+            return new ParsedNotification(
+                    conversationKey,
+                    titleString,
+                    sender,
+                    chosen.text,
+                    group,
+                    serviceAccounts,
+                    senderKey
+            );
         }
 
         private static boolean isConversationChannel(String channel, Notification n) {

@@ -81,6 +81,7 @@ import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.TouchApp
@@ -161,6 +162,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BubbleTrampolineBehavior.migrateLegacyPreferences(this)
         NotificationChannels.ensure(this)
+        ServiceAccountParticipants.migrateLegacyAvatars(this)
         ConversationBubbles.syncActiveNotifications(this)
         NotificationChannels.deleteLegacyMessageChannels(this)
         getSystemService(NotificationManager::class.java).apply {
@@ -222,6 +224,14 @@ class MainActivity : ComponentActivity() {
                     },
                     onSetDefaultGroupBubblesEnabled = { enabled ->
                         ConversationBubblePreferences.setDefaultGroupEnabled(this, enabled)
+                        ConversationBubbles.syncActiveNotifications(this)
+                        setupState = readSetupState()
+                    },
+                    onSetDefaultServiceAccountBubblesEnabled = { enabled ->
+                        ConversationBubblePreferences.setDefaultServiceAccountsEnabled(
+                            this,
+                            enabled,
+                        )
                         ConversationBubbles.syncActiveNotifications(this)
                         setupState = readSetupState()
                     },
@@ -321,6 +331,8 @@ class MainActivity : ComponentActivity() {
                 ConversationBubblePreferences.isDefaultPrivateEnabled(this),
             defaultGroupBubblesEnabled =
                 ConversationBubblePreferences.isDefaultGroupEnabled(this),
+            defaultServiceAccountBubblesEnabled =
+                ConversationBubblePreferences.isDefaultServiceAccountsEnabled(this),
             conversationSortOrder = ConversationBubblePreferences.getSortOrder(this),
             conversations = ConversationBubblePreferences.getConversations(this),
             promotedNotificationsAllowed = canPostPromotedNotifications(),
@@ -606,6 +618,7 @@ private data class SetupState(
     val chatBubblesSystemAllowed: Boolean = false,
     val defaultPrivateBubblesEnabled: Boolean = true,
     val defaultGroupBubblesEnabled: Boolean = true,
+    val defaultServiceAccountBubblesEnabled: Boolean = true,
     val conversationSortOrder: ConversationBubblePreferences.SortOrder =
         ConversationBubblePreferences.SortOrder.RECENT,
     val conversations: List<ConversationBubblePreferences.Entry> = emptyList(),
@@ -656,6 +669,14 @@ private data class SetupState(
 
     val syncRemovalReady: Boolean
         get() = readLogsGranted && notificationServiceDebugEnabled
+
+    fun defaultBubblesEnabled(
+        conversation: ConversationBubblePreferences.Entry,
+    ): Boolean = when {
+        conversation.isServiceAccountConversation -> defaultServiceAccountBubblesEnabled
+        conversation.isGroupConversation -> defaultGroupBubblesEnabled
+        else -> defaultPrivateBubblesEnabled
+    }
 }
 
 private enum class RequiredSetupStep {
@@ -704,6 +725,7 @@ private fun WeModernApp(
     onSetPerConversationTrampolineEnabled: (Boolean) -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
+    onSetDefaultServiceAccountBubblesEnabled: (Boolean) -> Unit,
     onSetConversationSortOrder: (ConversationBubblePreferences.SortOrder) -> Unit,
     onSetConversationBubbleOverride: (
         String,
@@ -810,6 +832,8 @@ private fun WeModernApp(
                         onSetDefaultPrivateBubblesEnabled =
                             onSetDefaultPrivateBubblesEnabled,
                         onSetDefaultGroupBubblesEnabled = onSetDefaultGroupBubblesEnabled,
+                        onSetDefaultServiceAccountBubblesEnabled =
+                            onSetDefaultServiceAccountBubblesEnabled,
                         onOpenConversationSettings = {
                             showConversationSettings = true
                         },
@@ -940,11 +964,7 @@ private fun WeModernApp(
         ModalBottomSheet(onDismissRequest = { selectedConversationId = null }) {
             ConversationOverrideSheet(
                 conversation = selectedConversation,
-                defaultEnabled = if (selectedConversation.isGroupConversation) {
-                    state.defaultGroupBubblesEnabled
-                } else {
-                    state.defaultPrivateBubblesEnabled
-                },
+                defaultEnabled = state.defaultBubblesEnabled(selectedConversation),
                 onSelect = { override ->
                     onSetConversationBubbleOverride(selectedConversation.id, override)
                 },
@@ -1533,6 +1553,7 @@ private fun LazyListScope.bubbleSectionItems(
     onSetPerConversationTrampolineEnabled: (Boolean) -> Unit,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
+    onSetDefaultServiceAccountBubblesEnabled: (Boolean) -> Unit,
     onOpenConversationSettings: () -> Unit,
 ) {
     settingsPageItem(
@@ -1620,6 +1641,8 @@ private fun LazyListScope.bubbleSectionItems(
             state = state,
             onSetDefaultPrivateBubblesEnabled = onSetDefaultPrivateBubblesEnabled,
             onSetDefaultGroupBubblesEnabled = onSetDefaultGroupBubblesEnabled,
+            onSetDefaultServiceAccountBubblesEnabled =
+                onSetDefaultServiceAccountBubblesEnabled,
             onOpenConversationSettings = onOpenConversationSettings,
         )
     }
@@ -1630,6 +1653,7 @@ private fun BubbleDefaultsCard(
     state: SetupState,
     onSetDefaultPrivateBubblesEnabled: (Boolean) -> Unit,
     onSetDefaultGroupBubblesEnabled: (Boolean) -> Unit,
+    onSetDefaultServiceAccountBubblesEnabled: (Boolean) -> Unit,
     onOpenConversationSettings: () -> Unit,
 ) {
     Surface(
@@ -1675,6 +1699,19 @@ private fun BubbleDefaultsCard(
                 icon = Icons.Rounded.Group,
                 checked = state.defaultGroupBubblesEnabled,
                 onCheckedChange = onSetDefaultGroupBubblesEnabled,
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            BubbleDefaultRow(
+                title = stringResource(R.string.bubble_default_service_accounts_title),
+                supporting = stringResource(
+                    R.string.bubble_default_service_accounts_description
+                ),
+                icon = Icons.Rounded.SmartToy,
+                checked = state.defaultServiceAccountBubblesEnabled,
+                onCheckedChange = onSetDefaultServiceAccountBubblesEnabled,
             )
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -1962,11 +1999,7 @@ private fun ConversationSettingsSheet(
                             conversation = conversation,
                             showNotificationCount = state.conversationSortOrder ==
                                 ConversationBubblePreferences.SortOrder.COUNT,
-                            defaultEnabled = if (conversation.isGroupConversation) {
-                                state.defaultGroupBubblesEnabled
-                            } else {
-                                state.defaultPrivateBubblesEnabled
-                            },
+                            defaultEnabled = state.defaultBubblesEnabled(conversation),
                             onClick = { onSelectConversation(conversation.id) },
                         )
                     }
@@ -2078,10 +2111,11 @@ private fun ConversationBubbleRow(
         ConversationShortcuts.loadConversationAvatar(context, conversation.id)?.asImageBitmap()
     }
     val conversationType = stringResource(
-        if (conversation.isGroupConversation) {
-            R.string.bubble_conversation_type_group
-        } else {
-            R.string.bubble_conversation_type_private
+        when {
+            conversation.isServiceAccountConversation ->
+                R.string.bubble_conversation_type_service_accounts
+            conversation.isGroupConversation -> R.string.bubble_conversation_type_group
+            else -> R.string.bubble_conversation_type_private
         }
     )
     val conversationDetail = if (showNotificationCount) {
@@ -2206,10 +2240,12 @@ private fun ConversationOverrideSheet(
             ConversationOverrideOption(
                 title = stringResource(R.string.bubble_override_default_title),
                 supporting = stringResource(
-                    if (conversation.isGroupConversation) {
-                        R.string.bubble_override_default_group_description
-                    } else {
-                        R.string.bubble_override_default_private_description
+                    when {
+                        conversation.isServiceAccountConversation ->
+                            R.string.bubble_override_default_service_accounts_description
+                        conversation.isGroupConversation ->
+                            R.string.bubble_override_default_group_description
+                        else -> R.string.bubble_override_default_private_description
                     },
                     stringResource(
                         if (defaultEnabled) R.string.setup_status_enabled

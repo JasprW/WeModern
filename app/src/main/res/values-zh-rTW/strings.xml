@@ -43,11 +43,13 @@
     <string name="bubble_trampoline_bubbles_required_description">開啟聊天泡泡後可設定</string>
     <string name="bubble_trampoline_system_required_description">請先在 Android 設定中允許泡泡</string>
     <string name="bubble_defaults_title">對話設定</string>
-    <string name="bubble_defaults_description">設定私人與群組對話的預設泡泡行為，並可按需覆寫特定對話。</string>
+    <string name="bubble_defaults_description">設定私人對話、群組對話和服務號的預設泡泡行為，並可按需覆寫特定對話。</string>
     <string name="bubble_default_private_title">私人對話</string>
     <string name="bubble_default_private_description">預設允許私人對話使用泡泡</string>
     <string name="bubble_default_group_title">群組對話</string>
     <string name="bubble_default_group_description">預設允許群組對話使用泡泡</string>
+    <string name="bubble_default_service_accounts_title">服務號</string>
+    <string name="bubble_default_service_accounts_description">允許合併後的服務號對話使用泡泡</string>
     <string name="bubble_per_conversation_title">逐對話設定</string>
     <string name="bubble_per_conversation_description">為特定已知對話個別覆寫預設泡泡設定</string>
     <string name="bubble_per_conversation_sheet_description">選擇一個已知對話，個別覆寫其預設泡泡行為。</string>
@@ -55,9 +57,10 @@
     <string name="bubble_sort_recent">最近使用</string>
     <string name="bubble_sort_count">通知最多</string>
     <string name="bubble_no_known_conversations">收到微信訊息後，對話會顯示在這裡。</string>
-    <string name="bubble_identity_warning">逐對話設定依賴微信通知中的來源名稱。修改暱稱或備註、修改群組名稱、或切換微信語言後，現有設定可能無法繼續配對。</string>
+    <string name="bubble_identity_warning">私人與群組對話設定依賴微信通知中的來源名稱；修改暱稱、備註或群組名稱後，現有設定可能無法繼續配對。服務號在支援的微信語言間使用同一個固定身分。</string>
     <string name="bubble_conversation_type_private">私人對話</string>
     <string name="bubble_conversation_type_group">群組對話</string>
+    <string name="bubble_conversation_type_service_accounts">服務號</string>
     <string name="bubble_conversation_type_with_count">%1$s · %2$s</string>
     <string name="bubble_conversation_uses_default">預設：%1$s</string>
     <string name="bubble_conversation_override_enabled">開啟</string>
@@ -69,6 +72,7 @@
     <string name="bubble_override_default_title">使用預設設定</string>
     <string name="bubble_override_default_private_description">跟隨私人對話預設設定 · %1$s</string>
     <string name="bubble_override_default_group_description">跟隨群組對話預設設定 · %1$s</string>
+    <string name="bubble_override_default_service_accounts_description">跟隨服務號預設設定 · %1$s</string>
     <string name="bubble_override_enabled_title">一律允許</string>
     <string name="bubble_override_enabled_description">即使對應對話預設關閉，也為此對話加入泡泡支援</string>
     <string name="bubble_override_disabled_title">一律禁止</string>

@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- 将微信 `Service Accounts` / `服务号` / `服務號` 通知特化为一个固定聚合 conversation：每个服务号使用微信 source notification ID 作为独立 bot `Person`，保留自己的名称和缓存头像，最新服务号头像负责通知、shortcut 与 Bubble 主头像；切换微信语言不再生成重复会话。微信当次未提供 `largeIcon` 时优先复用 participant 缓存；升级后还会把能够按当前 sender 精确归属的旧私聊头像迁入 participant 缓存，后续微信新头像会继续覆盖，不使用归属不明的旧聚合头像。聚合通知仍只打开最新服务号，打开、已读和清理按整个服务号会话处理。Bubbles 设置新增与私聊、群聊互不影响的“服务号”默认开关，使用专属机器人图标与 Per-conversation settings 区分，并继续支持已知会话 Always allow / Never allow 覆盖；关闭服务号 Bubble 不影响普通横幅提醒。
+
 ## 1.8.0 — 2026-08-26
 
 - 为 Bubble trampoline 新增正式模式开关：默认开启“会话级气泡”，每个会话使用独立 Bubble 并直达聊天，但明确提示当前微信版本可能出现 IME 遮挡；关闭后改用一个固定共享 Bubble，最新合资格消息只更新同一 host，展开仅进入微信 Home、不直接打开会话，从而使用 `LauncherUI` 内部导航获得更好的 IME 适配。共享模式继续保留逐会话 replacement 和 sync-removal 映射，child 通过分组 alert 规则静默，统一消息 channel 上只由固定 host 负责 Bubble flyout、声音与振动；模式切换会立即迁移活动通知。

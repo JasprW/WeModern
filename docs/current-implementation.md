@@ -40,7 +40,9 @@ Android 10（API 29）及以上可为每个允许的会话附加 `BubbleMetadata
 
 升级时先把仍在历史 quiet channel 上的活动会话通知和消息摘要重发到 `wechat_messages_alerts`，再删除 `wechat_messages_bubbled_quiet`、`wechat_messages_bubbles_quiet` 与 `wechat_messages_bubbles_quiet_v2`。这样只保留一个消息分类，并尽量避免升级时丢失现有 Bubble。
 
-会话默认按私聊和群聊分别配置；每个已知会话还可覆盖为“始终允许”或“永不允许”。会话身份由微信通知提供的标题构成（`wechat:<title>`），昵称、群名或语言变化会使旧覆盖失配；这不是微信稳定内部 ID。
+会话默认按私聊、群聊和服务号分别配置；每个已知会话还可覆盖为“始终允许”或“永不允许”。普通会话身份由微信通知提供的标题构成（`wechat:<title>`），昵称或群名变化会使旧覆盖失配；这不是微信稳定内部 ID。服务号是例外：微信通知标题 `Service Accounts`、`服务号` 与 `服務號` 统一映射到固定 `wechat:service_accounts`，切换微信语言不会拆成新会话。
+
+服务号通知按一个聚合 group conversation 改写，而不是为每个服务号创建独立 Android conversation。正文中的 `服务号名称: 内容` 会生成一条以该服务号为 sender 的 `MessagingStyle.Message`；微信 source notification ID 作为稳定 participant key，`Person` 标记为 bot，并使用该 source 的头像。参与者头像独立缓存：优先使用微信当前 source 的 `largeIcon` 并覆盖缓存；当前 source 暂未携带头像时复用同一 participant 缓存；participant 缓存为空时，还会按当前 sender 精确查找旧 `wechat:<sender>` 私聊头像并迁移。该 fallback 不读取旧本地化 Service Accounts 聚合头像，避免把其他服务号的最新头像错误归属。最新服务号头像同时更新聚合通知、shortcut 与 Bubble 主头像。Shortcut 最多附带最近 8 个服务号 `Person`，参与者元数据最多保留最近 25 个，以控制跨进程 Bitmap 负载。通知整体和 Bubble 只保留最新 source 的微信 `contentIntent`；打开、已读、历史清理与移除均作用于整个服务号聚合会话，不支持系统通知内逐消息跳转。服务号独立 Bubble 默认开关与私聊、群聊互不影响，使用专属机器人图标，与 Per-conversation settings 的通知管理图标区分；关闭时仍发布普通提醒但不创建、更新或接管 Bubble。Pixel 覆盖安装已确认通知监听重连、独立开关可关闭并恢复，且旧本地化 long-lived shortcut 已执行清理；2026-08-31 又确认无 `largeIcon` 的跃捷通知可从精确旧私聊缓存迁移出 participant 与 canonical conversation 头像，shortcut 获得 bitmap 并保留 3 个 participant `Person`。两个不同服务号同时显示的逐消息头像及点击清理仍待后续真实通知验收，证据与清单见[服务号聚合会话](explorations/2026-08-26-service-account-conversation.md)。
 
 ### Bubble trampoline
 

@@ -10,23 +10,35 @@ import java.util.List;
 
 public class ConversationBubblePreferencesTest {
     @Test
-    public void defaultsAllowPrivateAndGroupConversationsIndependently() {
+    public void defaultsAllowConversationTypesIndependently() {
         assertTrue(ConversationBubblePreferences.resolve(
-                true, false, false, ConversationBubblePreferences.Override.DEFAULT));
+                true, false, false, false, false,
+                ConversationBubblePreferences.Override.DEFAULT));
         assertFalse(ConversationBubblePreferences.resolve(
-                true, false, true, ConversationBubblePreferences.Override.DEFAULT));
+                true, false, true, true, false,
+                ConversationBubblePreferences.Override.DEFAULT));
         assertFalse(ConversationBubblePreferences.resolve(
-                false, true, false, ConversationBubblePreferences.Override.DEFAULT));
+                false, true, true, false, false,
+                ConversationBubblePreferences.Override.DEFAULT));
         assertTrue(ConversationBubblePreferences.resolve(
-                false, true, true, ConversationBubblePreferences.Override.DEFAULT));
+                false, true, false, true, false,
+                ConversationBubblePreferences.Override.DEFAULT));
+        assertFalse(ConversationBubblePreferences.resolve(
+                true, true, false, true, true,
+                ConversationBubblePreferences.Override.DEFAULT));
+        assertTrue(ConversationBubblePreferences.resolve(
+                false, false, true, true, true,
+                ConversationBubblePreferences.Override.DEFAULT));
     }
 
     @Test
     public void conversationOverrideWinsOverChatTypeDefault() {
         assertTrue(ConversationBubblePreferences.resolve(
-                false, false, true, ConversationBubblePreferences.Override.ENABLED));
+                false, false, false, true, true,
+                ConversationBubblePreferences.Override.ENABLED));
         assertFalse(ConversationBubblePreferences.resolve(
-                true, true, false, ConversationBubblePreferences.Override.DISABLED));
+                true, true, true, false, false,
+                ConversationBubblePreferences.Override.DISABLED));
     }
 
     @Test
@@ -69,6 +81,7 @@ public class ConversationBubblePreferencesTest {
                 "conversation",
                 "Conversation",
                 false,
+                false,
                 100L,
                 3L,
                 10L,
@@ -77,6 +90,7 @@ public class ConversationBubblePreferencesTest {
 
         ConversationBubblePreferences.Entry updated = original.withNotification(
                 "Conversation",
+                false,
                 false,
                 100L,
                 20L
@@ -92,6 +106,7 @@ public class ConversationBubblePreferencesTest {
                 "conversation",
                 "Conversation",
                 false,
+                false,
                 100L,
                 3L,
                 20L,
@@ -100,6 +115,7 @@ public class ConversationBubblePreferencesTest {
 
         ConversationBubblePreferences.Entry updated = original.withNotification(
                 "Conversation",
+                false,
                 false,
                 200L,
                 15L
@@ -117,6 +133,7 @@ public class ConversationBubblePreferencesTest {
         return new ConversationBubblePreferences.Entry(
                 id,
                 id,
+                false,
                 false,
                 lastSeenAt,
                 count,

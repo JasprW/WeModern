@@ -132,17 +132,21 @@ adb shell cmd appops set me.jaspr.wemodern RECEIVE_SENSITIVE_NOTIFICATIONS allow
 To use chat bubbles on Android 10 or later, first open **Android bubble setting**
 in the **Setup** section and allow all or selected conversations. The WeModern
 feature switch in **Bubbles** can only be enabled after that system setting is
-allowed. Private and group chats both bubble
-by default. Their defaults can be changed independently, and any known
+allowed. Private chats, group chats, and the combined Service Accounts conversation
+all bubble by default. Their defaults can be changed independently, and any known
 conversation can override its default with Always allow or Never allow.
 Known conversations can be sorted by recency or total notification count.
 Disabling bubble support for a conversation removes its bubble metadata without
 disabling its normal notification; that conversation uses the alerting message
 channel so new messages can still appear as heads-up notifications.
 
-Conversation overrides are keyed by the source name in WeChat's notification.
+Private and group conversation overrides are keyed by the source name in WeChat's notification.
 Changing a nickname or remark, renaming a group, or changing the WeChat language
-can therefore make an existing override stop matching.
+can therefore make an existing override stop matching. `Service Accounts`, `服务号`,
+and `服務號` instead share one stable `wechat:service_accounts` identity. Each service is
+represented as a participant with its own cached avatar, while the latest service supplies
+the combined notification, shortcut, Bubble avatar, and WeChat launch action. Opening it
+marks and clears the combined Service Accounts conversation as one unit.
 
 On Android 12 or later, enabling **Bubble trampoline** reveals a mode switch.
 The default conversation mode makes each eligible conversation notification its
@@ -151,7 +155,7 @@ It opens the chat directly, but WeChat's input bar may be covered by the IME in
 the embedded task. Turning the mode switch off keeps one shared Bubble for all
 eligible conversations. That Bubble opens WeChat Home rather than a specific
 chat, which requires one more tap but gives WeChat the task shape that better
-adapts to the IME. The same private/group defaults and conversation overrides
+adapts to the IME. The same private/group/Service Accounts defaults and conversation overrides
 decide which notifications may create or update either kind of Bubble. A
 disabled conversation keeps its normal heads-up notification but cannot create,
 update, or take over a Bubble. The Message test always remains notification ID
