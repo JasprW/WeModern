@@ -1,0 +1,57 @@
+WeModern
+Copyright (C) 2026 Bofan Wang
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <https://www.gnu.org/licenses/>.
+
+================================================================================
+Prior art and credit
+================================================================================
+
+WeModern is an independent implementation. It includes no source code from the
+projects below; they are credited because their published work informed the
+approach this app takes.
+
+Nevolution and its WeChat Modernized decorator
+  Contributed the idea this app builds on: modernizing an existing app's
+  notifications without requiring any change from that app's developer.
+  https://github.com/Nevolution/sdk            (Apache License 2.0)
+  https://github.com/Nevolution/decorator-wechat (Apache License 2.0)
+  Copyright Oasis Feng and the Nevolution contributors.
+
+================================================================================
+Third-party components
+================================================================================
+
+AndroidX — activity-compose, compose foundation / material / ui, lifecycle
+  Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0
+  Copyright The Android Open Source Project.
+
+Google Sans Flex (app/src/main/res/font/google_sans_flex_variable.ttf)
+  SIL Open Font License 1.1, https://openfontlicense.org
+  Copyright Google LLC.
+
+================================================================================
+Trademarks and affiliation
+================================================================================
+
+WeChat and 微信 are trademarks of Tencent Holdings Ltd. WeModern is an
+independent, unofficial project: it is not affiliated with, endorsed by, or
+sponsored by Tencent, and it is not a WeChat client. Those names appear in this
+project only to describe the application whose notifications WeModern rewrites.
+
+WeModern ships no artwork, icon, or other asset belonging to Tencent or to any
+other application. Icons used for rewritten notifications come from the
+notification being rewritten (provided at runtime by Android) or from original
+artwork in this repository.
+
+Android and Google are trademarks of Google LLC.

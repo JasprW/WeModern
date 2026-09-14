@@ -3,6 +3,17 @@ plugins {
     id "org.jetbrains.kotlin.plugin.compose"
 }
 
+// Release signing material stays out of the repository. CI decodes it from repository
+// secrets into a temporary file and points these variables at it; a local release build
+// exports them directly. Without them the release build stays unsigned on purpose, so a
+// release pipeline fails loudly instead of publishing a debug-signed APK.
+def releaseKeystorePath = System.getenv("WEMODERN_KEYSTORE_PATH")
+def releaseKeystorePassword = System.getenv("WEMODERN_KEYSTORE_PASSWORD")
+def releaseKeyAlias = System.getenv("WEMODERN_KEY_ALIAS")
+def releaseKeyPassword = System.getenv("WEMODERN_KEY_PASSWORD")
+def hasReleaseSigningKey = releaseKeystorePath && releaseKeystorePassword
+        && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace "me.jaspr.wemodern"
     compileSdk 37
@@ -15,6 +26,27 @@ android {
         versionName "1.8.0"
     }
 
+    signingConfigs {
+        release {
+            if (hasReleaseSigningKey) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasReleaseSigningKey) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -22,6 +54,8 @@ android {
 
     buildFeatures {
         compose true
+        // NotificationDebugPreferences reads BuildConfig.DEBUG to pick per-build-type defaults.
+        buildConfig true
     }
 }
 

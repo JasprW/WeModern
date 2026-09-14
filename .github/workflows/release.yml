@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to release, for example v0.11
+        description: Tag to release, for example v1.9.0
         required: true
         type: string
+      dry_run:
+        description: Build, sign and verify without publishing a release
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -47,15 +52,70 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "wemodern-${{ steps.release.outputs.tag }}.apk"
+      - name: Decode signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 is not configured. Refusing to publish an unsigned APK."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/signing/release.jks"
+
+      - name: Build signed release APK
+        env:
+          WEMODERN_KEYSTORE_PATH: ${{ runner.temp }}/signing/release.jks
+          WEMODERN_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          WEMODERN_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          WEMODERN_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease
+
+      - name: Verify the APK before publishing
+        run: |
+          BUILD_TOOLS="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/37.0.0"
+          APK=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$APK" ]; then
+            echo "::error::release APK was not produced"
+            exit 1
+          fi
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
+          BADGING=$("$BUILD_TOOLS/aapt2" dump badging "$APK")
+          echo "$BADGING" | grep -E "^package|^sdkVersion|^targetSdkVersion" || true
+          if echo "$BADGING" | grep -q "application-debuggable"; then
+            echo "::error::release APK is debuggable"
+            exit 1
+          fi
+
+      - name: Rename APK and write checksum
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk \
+            "wemodern-${{ steps.release.outputs.tag }}.apk"
+          sha256sum "wemodern-${{ steps.release.outputs.tag }}.apk" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Remove signing material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wemodern-release-${{ steps.release.outputs.tag }}
+          path: |
+            wemodern-${{ steps.release.outputs.tag }}.apk
+            SHA256SUMS
 
       - name: Publish GitHub Release
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: WeModern ${{ steps.release.outputs.tag }}
-          files: wemodern-${{ steps.release.outputs.tag }}.apk
+          generate_release_notes: true
+          files: |
+            wemodern-${{ steps.release.outputs.tag }}.apk
+            SHA256SUMS
