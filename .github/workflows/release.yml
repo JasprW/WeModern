@@ -10,6 +10,10 @@ on:
         description: Tag to release, for example v1.9.0
         required: true
         type: string
+      ref:
+        description: Git ref to build (defaults to the branch this run was dispatched on)
+        required: false
+        type: string
       dry_run:
         description: Build, sign and verify without publishing a release
         required: false
@@ -26,7 +30,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # A manual run builds the ref it was dispatched on unless an explicit ref is given;
+          # a tag push builds the tag. The release tag input only names the release.
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Set release tag
         id: release
