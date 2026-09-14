@@ -5,8 +5,18 @@ import android.content.SharedPreferences;
 
 /** Runtime controls for raw WeChat notification capture and notification rewriting. */
 final class NotificationDebugPreferences {
-    static final boolean DEFAULT_CAPTURE_LOGGING_ENABLED = true;
-    static final boolean DEFAULT_REWRITE_ENABLED = false;
+    /**
+     * Debug builds start with capture and logging on and rewriting off, so notification
+     * shapes can be recorded before any rewrite touches them.
+     */
+    static final boolean DEFAULT_CAPTURE_LOGGING_ENABLED = BuildConfig.DEBUG;
+
+    /**
+     * Release builds start the other way around: rewriting on, because that is what the
+     * app is installed for, and capture off, so a released build stores no notification
+     * content unless the user opts in.
+     */
+    static final boolean DEFAULT_REWRITE_ENABLED = !BuildConfig.DEBUG;
 
     private static final String PREFERENCES = "notification_debug_preferences";
     private static final String KEY_CAPTURE_LOGGING = "capture_logging";

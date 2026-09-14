@@ -3,6 +3,21 @@
 WeModern is a standalone Android app that rewrites WeChat message and call
 notifications with the notification features available on modern Android.
 
+WeModern is an independent, unofficial project. It is not affiliated with,
+endorsed by, or sponsored by Tencent, and it is not a WeChat client. "WeChat"
+and 微信 are trademarks of Tencent Holdings Ltd.; they appear here only to
+describe the app whose notifications this utility rewrites. WeModern ships no
+Tencent artwork — notification icons come from the notification being rewritten
+at runtime, or from original artwork in this repository.
+
+## Privacy
+
+WeModern declares **no `INTERNET` permission**, so it has no network capability:
+notification content is read and rewritten in memory and never leaves the
+device. No analytics, no ads, no accounts, no telemetry. A release build stores
+no notification content by default. Full statement, in English and Chinese:
+[PRIVACY.md](PRIVACY.md).
+
 ## Features
 
 - Rebuilds WeChat messages with Android's conversation-style notification UI,
@@ -66,12 +81,16 @@ without bubble metadata.
 
 ## Credits
 
-This project is inspired by and based on the approach pioneered by
-[Nevolution](https://github.com/Nevolution/sdk), especially its
-[WeChat Modernized decorator](https://github.com/Nevolution/decorator-wechat).
-Nevolution introduced the idea of upgrading an existing app's notifications
-without requiring changes from that app's developer. Many thanks to Oasis Feng
-and all Nevolution contributors for the original concept and implementation.
+WeModern is an independent implementation and contains no source code from the
+projects below. The design was informed by prior art, above all
+[Nevolution](https://github.com/Nevolution/sdk) and its
+[WeChat Modernized decorator](https://github.com/Nevolution/decorator-wechat),
+which introduced the idea of upgrading an existing app's notifications without
+requiring changes from that app's developer. Many thanks to Oasis Feng and all
+Nevolution contributors.
+
+Third-party components, font licensing, and trademark attribution are listed in
+[NOTICE](NOTICE).
 
 ## Build
 
@@ -91,9 +110,11 @@ The app has two independent controls under **Debug**. **Capture and logging**
 records every intercepted active-scan, posted, and removed WeChat notification
 under the `WeModern.Capture` logcat tag and in an app-private JSONL file.
 **Rewrite notifications** separately controls parsing, hiding, replacing,
-bubbles, and Live Update promotion. The current development defaults enable
-capture and logging while leaving rewriting disabled, so WeChat notifications
-remain unchanged while evidence is collected.
+bubbles, and Live Update promotion. Debug builds default to capture and logging
+on with rewriting off, so WeChat notifications remain unchanged while evidence
+is collected. Release builds default the other way around — rewriting on,
+capture off — so an installed release rewrites notifications immediately and
+stores no notification content unless the user turns capture on.
 
 Changes take effect immediately without rebuilding or reconnecting notification
 access. Monitor and export captured events with:
@@ -112,14 +133,42 @@ either on or off.
 
 ## Release
 
-Push a tag named `v*` to build the debug APK and publish it as a GitHub Release:
+Releases are built and signed by CI. Pushing a tag named `v*` runs
+`.github/workflows/release.yml`, which builds a release (non-debuggable) APK,
+verifies its signature, writes `SHA256SUMS`, and publishes both files as a
+GitHub Release:
 
 ```bash
-git tag v1.0
-git push origin v1.0
+git tag v1.9.0
+git push origin v1.9.0
 ```
 
-The release workflow attaches `wemodern-<tag>.apk`.
+Signing needs four repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
+`KEY_ALIAS`, `KEY_PASSWORD`. Without them the workflow fails instead of
+publishing an unsigned or debug-signed APK. Publish the checksum next to every
+download so users can verify what they installed:
+
+```bash
+shasum -a 256 -c SHA256SUMS
+```
+
+To rehearse a release — build, sign and verify, upload the APK as a workflow
+artifact, publish nothing — run the workflow manually with `dry_run`:
+
+```bash
+gh workflow run release.yml --repo JasprW/WeModern -f tag=vX.Y.Z -f dry_run=true
+```
+
+The signing key is the app's only update identity. Back it up offline; never
+commit it. For a local release build, point the same variables at the key:
+
+```bash
+export WEMODERN_KEYSTORE_PATH=/path/to/release.jks
+export WEMODERN_KEYSTORE_PASSWORD=...
+export WEMODERN_KEY_ALIAS=...
+export WEMODERN_KEY_PASSWORD=...
+./gradlew :app:assembleRelease
+```
 
 ## Device Setup
 
@@ -183,3 +232,17 @@ adb reboot
 ## Launcher Behavior
 
 Tapping the WeModern app icon opens WeModern settings by default. After notification access and notification permission are enabled, **Open WeChat from icon** can be turned on under **Advanced**. Touch and hold the icon to open one of the three most recent WeChat conversations or select **Settings**, which is always the fourth and final visible shortcut, to open the WeModern setup screen. The Android shortcut publishing limit can be higher than the number rendered by a launcher, so WeModern caps the visible list at four instead of allowing hidden contacts to push Settings out of Pixel Launcher's menu.
+
+## License
+
+Copyright (C) 2026 Bofan Wang.
+
+WeModern is free software, licensed under the
+[GNU General Public License, version 3 or later](LICENSE). You may use, study,
+change, and redistribute it, including commercially. If you distribute a
+modified version, it must remain under the same license and ship its source.
+
+That is deliberate. An app that holds notification access can read every message
+that reaches your phone, so anyone who installs it should be able to audit what
+it does — and anyone who does not trust this build should be able to build and
+sign their own.
